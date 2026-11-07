@@ -1,151 +1,105 @@
-import { createTikTokStyleCaptions } from "@remotion/captions";
-import React, { useMemo } from "react";
-import {
-  AbsoluteFill,
-  interpolate,
-  OffthreadVideo,
-  spring,
-  staticFile,
-  useCurrentFrame,
-  useVideoConfig,
-} from "remotion";
+import React from "react";
+import { AbsoluteFill, OffthreadVideo, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { BRollLayer } from "./BRoll";
+import { Captions } from "./Captions";
+import { Hook } from "./Hook";
 import type { ClipProps } from "./types";
 
-const Captions: React.FC<{ captions: ClipProps["captions"] }> = ({
-  captions,
+const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
+const FACE_Y = 0.4; // wajah ditempatkan di 40% tinggi frame
+
+const CameraVideo: React.FC<Pick<ClipProps, "src" | "srcWidth" | "srcHeight" | "camera">> = ({
+  src,
+  srcWidth,
+  srcHeight,
+  camera,
 }) => {
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
-  const nowMs = (frame / fps) * 1000;
-
-  const { pages } = useMemo(
-    () =>
-      createTikTokStyleCaptions({
-        captions,
-        combineTokensWithinMilliseconds: 1000,
-      }),
-    [captions],
-  );
-
-  const page = [...pages].reverse().find((p) => p.startMs <= nowMs);
-  if (!page) return null;
-  const pageEnd = page.startMs + page.durationMs;
-  if (nowMs > pageEnd + 200) return null;
-
-  const pop = spring({
-    frame: frame - Math.round((page.startMs / 1000) * fps),
-    fps,
-    config: { damping: 14, stiffness: 200 },
-    durationInFrames: 12,
-  });
-
+  const { width, height } = useVideoConfig();
+  const base = Math.max(width / srcWidth, height / srcHeight);
+  const f = camera ? Math.min(frame, camera.z.length - 1) : 0;
+  const z = camera?.z[f] ?? 1;
+  const cx = camera?.cx[f] ?? srcWidth / 2;
+  const cy = camera?.cy[f] ?? srcHeight / 2;
+  const s = base * z;
+  // titik (cx, cy) di video sumber dibawa ke posisi wajah di frame, lalu dijepit agar tidak ada tepi kosong
+  const left = clamp(width / 2 - cx * s, width - srcWidth * s, 0);
+  const top = clamp(height * FACE_Y - cy * s, height - srcHeight * s, 0);
   return (
-    <AbsoluteFill
+    <OffthreadVideo
+      src={staticFile(src)}
       style={{
-        justifyContent: "flex-end",
-        alignItems: "center",
-        paddingBottom: 380,
-        paddingLeft: 60,
-        paddingRight: 60,
+        position: "absolute",
+        left: 0,
+        top: 0,
+        width: srcWidth,
+        height: srcHeight,
+        transformOrigin: "0 0",
+        transform: `translate(${left}px, ${top}px) scale(${s})`,
       }}
-    >
-      <div
-        style={{
-          transform: `scale(${interpolate(pop, [0, 1], [0.85, 1])})`,
-          fontFamily: "Impact, 'Arial Black', sans-serif",
-          fontSize: 82,
-          lineHeight: 1.15,
-          textAlign: "center",
-          textTransform: "uppercase",
-          whiteSpace: "pre-wrap",
-          WebkitTextStroke: "10px black",
-          paintOrder: "stroke fill",
-        }}
-      >
-        {page.tokens.map((t) => {
-          const active = t.fromMs <= nowMs && nowMs < t.toMs;
-          return (
-            <span key={t.fromMs} style={{ color: active ? "#FFE600" : "#fff" }}>
-              {t.text}
-            </span>
-          );
-        })}
-      </div>
-    </AbsoluteFill>
+    />
   );
 };
 
-export const ClipVideo: React.FC<ClipProps> = ({
-  src,
-  captions,
-  title,
-  layout,
-}) => {
+export const ClipVideo: React.FC<ClipProps> = (props) => {
+  const { src, mode, camera, captions, emphasis, captionStyle, title, hook, broll, accent } = props;
   const frame = useCurrentFrame();
-  const { fps } = useVideoConfig();
+  const { durationInFrames } = useVideoConfig();
 
   if (!src) {
-    return null;
+    return (
+      <AbsoluteFill
+        style={{
+          backgroundColor: "#111",
+          color: "#fff",
+          justifyContent: "center",
+          alignItems: "center",
+          padding: 80,
+          textAlign: "center",
+          fontFamily: "Arial, sans-serif",
+          fontSize: 44,
+          lineHeight: 1.4,
+        }}
+      >
+        Belum ada video. Di panel Props isi "src", misalnya work/sample/clip_01.mp4 (file ada di folder public/).
+      </AbsoluteFill>
+    );
   }
-
-  const url = staticFile(src);
-
-  const titleIn = spring({ frame, fps, config: { damping: 200 } });
-  const showTitle = title && frame < fps * 3;
 
   return (
     <AbsoluteFill style={{ backgroundColor: "black" }}>
-      {layout === "blur-fit" ? (
-        <>
-          <AbsoluteFill style={{ filter: "blur(40px) brightness(0.6)" }}>
-            <OffthreadVideo
-              src={url}
-              muted
-              style={{ width: "100%", height: "100%", objectFit: "cover" }}
-            />
-          </AbsoluteFill>
-          <AbsoluteFill style={{ justifyContent: "center" }}>
-            <OffthreadVideo
-              src={url}
-              style={{ width: "100%", objectFit: "contain" }}
-            />
-          </AbsoluteFill>
-        </>
+      {mode === "camera" ? (
+        <CameraVideo src={src} srcWidth={props.srcWidth} srcHeight={props.srcHeight} camera={camera} />
       ) : (
         <OffthreadVideo
-          src={url}
+          src={staticFile(src)}
           style={{ width: "100%", height: "100%", objectFit: "cover" }}
         />
       )}
 
-      {showTitle ? (
-        <AbsoluteFill
-          style={{
-            alignItems: "center",
-            paddingTop: 220,
-            opacity: titleIn,
-            transform: `translateY(${interpolate(titleIn, [0, 1], [-30, 0])}px)`,
-          }}
-        >
-          <div
-            style={{
-              background: "rgba(0,0,0,0.65)",
-              color: "#fff",
-              fontFamily: "Arial, sans-serif",
-              fontWeight: 800,
-              fontSize: 54,
-              padding: "20px 36px",
-              borderRadius: 24,
-              maxWidth: 900,
-              textAlign: "center",
-            }}
-          >
-            {title}
-          </div>
-        </AbsoluteFill>
-      ) : null}
+      {/* gradasi agar caption dan judul mudah dibaca */}
+      <AbsoluteFill
+        style={{
+          background:
+            "linear-gradient(180deg, rgba(0,0,0,.42) 0%, rgba(0,0,0,0) 22%, rgba(0,0,0,0) 58%, rgba(0,0,0,.55) 100%)",
+        }}
+      />
 
-      <Captions captions={captions} />
+      <BRollLayer items={broll} accent={accent} />
+      {hook ? <Hook title={title} accent={accent} /> : null}
+      <Captions captions={captions} emphasis={emphasis} style={captionStyle} accent={accent} />
+
+      {/* bilah progres tipis di atas */}
+      <div
+        style={{
+          position: "absolute",
+          top: 0,
+          left: 0,
+          height: 10,
+          width: `${(frame / Math.max(1, durationInFrames)) * 100}%`,
+          background: accent,
+        }}
+      />
     </AbsoluteFill>
   );
 };

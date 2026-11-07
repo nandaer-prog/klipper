@@ -9,6 +9,7 @@ import {
   stageTranscribe,
   type Job,
 } from "./pipeline";
+import { takeSidecar } from "./settings";
 import { clearJobs, removeJob, setJob } from "./status";
 
 /**
@@ -170,8 +171,9 @@ const tick = async () => {
     lastSize.delete(file);
 
     const moved = path.join(PROCESSING, path.basename(file));
+    const settings = await takeSidecar(file);
     await rename(file, moved);
-    const j = makeJob(moved);
+    const j = makeJob(moved, settings);
     inflight.add(j);
     busy.transcribe = true;
     console.log(`\n=== ${j.id}: mulai transkripsi ===`);

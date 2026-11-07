@@ -13,12 +13,15 @@ export const sanitizeCaptions = (captions: Caption[]): Caption[] => {
     if (PUNCT_ONLY.test(c.text)) {
       const prev = out[out.length - 1];
       if (prev) {
-        prev.text += c.text.trim();
+        prev.text += c.text.trim().replace(/[-–—]+/g, ""); // strip dialog tidak ikut digabung
         prev.endMs = Math.max(prev.endMs, c.endMs);
       }
       continue;
     }
-    out.push({ ...c });
+    // buang tanda strip sisa penanda dialog Whisper ("ko.-", "-Iya")
+    const text = c.text.replace(/^(\s*)[-–—]+\s*/, "$1").replace(/\s*[-–—]+$/, "");
+    if (text.trim() === "") continue;
+    out.push({ ...c, text });
   }
   return out;
 };

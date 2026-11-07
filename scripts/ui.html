@@ -111,6 +111,13 @@
   .err { color:var(--bad); font-size:13px; white-space:pre-wrap; word-break:break-word; }
   textarea { width:100%; background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:10px; font:inherit; resize:vertical; }
   textarea:focus { outline:2px solid #bcd0ff; border-color:var(--blue); }
+  .fl { display:block; font-size:12px; font-weight:700; color:var(--muted); margin-bottom:8px; }
+  .fl input, .fl select, .fl textarea { display:block; width:100%; margin-top:4px; padding:8px 10px; border:1px solid var(--line); border-radius:10px; font:inherit; font-weight:400; color:var(--ink); background:#fff; }
+  .grid3 { display:grid; grid-template-columns:repeat(3,1fr); gap:10px; }
+  .chk { display:flex; flex-direction:column; justify-content:center; gap:2px; font-size:13px; font-weight:700; cursor:pointer; padding:6px 0; }
+  .chk input { margin-right:6px; }
+  .chk small { font-weight:400; color:var(--muted); font-size:11px; margin-left:22px; }
+  @media (max-width:640px) { .grid3 { grid-template-columns:1fr; } }
   .dl { border-top:1px solid var(--line); padding-top:10px; }
   .dl .u { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60%; }
 
@@ -147,6 +154,36 @@
         <div class="who"><span class="av" style="background:#2f5bd3">AO</span><div><b>Meja Aoi</b><small>Koordinator Unduhan: terima video dan link</small></div></div>
         <button class="x" data-close aria-label="Tutup">×</button>
       </header>
+      <div class="sec" id="settingsBox" style="margin-top:0">
+        <h4>Brief &amp; pengaturan klip</h4>
+        <label class="fl">Brief untuk editor AI (opsional)
+          <textarea id="fBrief" rows="2" placeholder="Contoh: Target anak muda, gaya santai, fokus ke tips praktis dan momen yang bikin kaget."></textarea>
+        </label>
+        <div class="grid3">
+          <label class="fl">Jumlah klip
+            <input id="fCount" type="number" min="1" max="20" value="5">
+          </label>
+          <label class="fl">Durasi min (detik)
+            <input id="fMin" type="number" min="5" max="170" value="25">
+          </label>
+          <label class="fl">Durasi maks (detik)
+            <input id="fMax" type="number" min="8" max="180" value="60">
+          </label>
+        </div>
+        <div class="grid3">
+          <label class="fl">Gaya caption
+            <select id="fStyle">
+              <option value="pop">Pop (kuning, tebal)</option>
+              <option value="box">Kotak (karaoke)</option>
+              <option value="clean">Bersih (putih)</option>
+            </select>
+          </label>
+          <label class="chk"><input id="fFace" type="checkbox" checked> Kamera pintar<small>ikuti wajah, pindah ke yang bicara</small></label>
+          <label class="chk"><input id="fBroll" type="checkbox" checked> B-roll animasi<small>ikon, angka, cutaway</small></label>
+        </div>
+        <label class="chk"><input id="fHook" type="checkbox" checked> Judul hook di awal klip</label>
+        <div class="muted" style="margin-top:6px">Pengaturan ini berlaku untuk video atau link yang Anda kirim setelahnya.</div>
+      </div>
       <div id="drop">
         <strong>Seret video mentah ke sini</strong>
         <span>atau klik untuk memilih file (.mp4 .mov .mkv .webm .avi .m4v)</span>
@@ -200,6 +237,40 @@ document.querySelectorAll(".modal").forEach((m) =>
 document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeAll(); });
 $("btnFlow").onclick = () => { $("flowPanel").hidden = !$("flowPanel").hidden; };
 
+
+// ---------- Brief & pengaturan klip ----------
+const SKEY = "clipperSettings";
+const fields = { brief: $("fBrief"), count: $("fCount"), minSec: $("fMin"), maxSec: $("fMax"), captionStyle: $("fStyle"), faceTracking: $("fFace"), broll: $("fBroll"), hook: $("fHook") };
+function getSettings() {
+  return {
+    brief: fields.brief.value.trim(),
+    count: Number(fields.count.value) || 5,
+    minSec: Number(fields.minSec.value) || 25,
+    maxSec: Number(fields.maxSec.value) || 60,
+    captionStyle: fields.captionStyle.value,
+    faceTracking: fields.faceTracking.checked,
+    broll: fields.broll.checked,
+    hook: fields.hook.checked,
+  };
+}
+function applySettings(v) {
+  fields.brief.value = v.brief ?? "";
+  fields.count.value = v.count; fields.minSec.value = v.minSec; fields.maxSec.value = v.maxSec;
+  fields.captionStyle.value = v.captionStyle;
+  fields.faceTracking.checked = !!v.faceTracking; fields.broll.checked = !!v.broll; fields.hook.checked = !!v.hook;
+}
+let settingsReady = false;
+function initSettings(defaults) {
+  if (settingsReady) return;
+  settingsReady = true;
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(SKEY) || "null"); } catch { saved = null; }
+  applySettings({ ...defaults, ...(saved || {}) });
+}
+Object.values(fields).forEach((el) => el.addEventListener("change", () => {
+  try { localStorage.setItem(SKEY, JSON.stringify(getSettings())); } catch { /* abaikan */ }
+}));
+
 // ---------- Upload ----------
 const drop = $("drop"), input = $("file");
 drop.onclick = () => input.click();
@@ -225,6 +296,7 @@ function sendOne(f, el) {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", "/api/upload");
     xhr.setRequestHeader("x-filename", enc(f.name));
+    xhr.setRequestHeader("x-settings", enc(JSON.stringify(getSettings())));
     xhr.upload.onprogress = (e) => {
       if (!e.lengthComputable) return;
       const p = Math.round((e.loaded / e.total) * 100);
@@ -250,7 +322,7 @@ function sendOne(f, el) {
 $("sendLinks").onclick = async () => {
   const urls = $("links").value.split(/\s+/).filter(Boolean);
   if (!urls.length) return;
-  const r = await fetch("/api/link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ urls }) });
+  const r = await fetch("/api/link", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ urls, settings: getSettings() }) });
   const j = await r.json().catch(() => ({}));
   if (j.ok) $("links").value = "";
   else alert("Tidak ada link http/https yang valid.");
@@ -272,6 +344,7 @@ async function refresh() {
   catch { if (window.studioOnline) window.studioOnline(false); return; }
 
   window.__lastState = s;
+  if (s.defaults) initSettings(s.defaults);
   if (window.studioOnline) window.studioOnline(true);
   if (window.updateStudio) window.updateStudio(s);
 

@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
 import { createReadStream, createWriteStream, existsSync } from "node:fs";
-import { mkdir, readdir, readFile, rename, rm, stat } from "node:fs/promises";
+import { mkdir, readdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { randomUUID, timingSafeEqual } from "node:crypto";
 import { INBOX, OUTPUT, ROOT, VIDEO_EXT, WORK } from "./config";
+import { defaultSettings, parseSettings, type JobSettings } from "./settings";
 
 const PASSWORD = process.env.APP_PASSWORD;
 if (!PASSWORD) {
@@ -25,6 +26,7 @@ type Download = {
   status: "menunggu" | "mengunduh" | "selesai" | "gagal";
   progress: number;
   error?: string;
+  settings: JobSettings;
 };
 const downloads: Download[] = [];
 let downloadChain = Promise.resolve();
@@ -82,6 +84,7 @@ const runDownload = (d: Download) =>
         }
         for (const f of files) {
           const target = existsSync(path.join(INBOX, f)) ? `${Date.now()}_${f}` : f;
+          await writeFile(path.join(INBOX, `${target}.settings.json`), JSON.stringify(d.settings));
           await rename(path.join(dir, f), path.join(INBOX, target));
         }
         d.status = "selesai";
@@ -173,7 +176,7 @@ const getState = async () => {
   }
   results.sort((a, b) => b.mtime - a.mtime);
 
-  return { jobs, queue, failed, results, downloads };
+  return { jobs, queue, failed, results, downloads, defaults: defaultSettings() };
 };
 
 const cleanName = (raw: string) => {
@@ -287,13 +290,22 @@ const server = http.createServer(async (req, res) => {
       }
       // Pindah setelah selesai, agar watcher tidak mengambil file setengah jadi
       const finalName = existsSync(path.join(INBOX, name)) ? stamp : name;
+      // pengaturan sidecar ditulis SEBELUM file masuk inbox agar watcher tidak mengambilnya tanpa pengaturan
+      let settings = defaultSettings();
+      try {
+        settings = parseSettings(JSON.parse(decodeURIComponent(String(req.headers["x-settings"] ?? "{}"))));
+      } catch {
+        // pakai pengaturan bawaan
+      }
+      await writeFile(path.join(INBOX, `${finalName}.settings.json`), JSON.stringify(settings));
       await rename(tmp, path.join(INBOX, finalName));
       json(res, { ok: true, name: finalName });
       return;
     }
 
     if (req.method === "POST" && url.pathname === "/api/link") {
-      const body = JSON.parse((await readBody(req)) || "{}") as { urls?: unknown };
+      const body = JSON.parse((await readBody(req)) || "{}") as { urls?: unknown; settings?: unknown };
+      const settings = parseSettings(body.settings);
       const urls = (Array.isArray(body.urls) ? body.urls : [])
         .map((u) => String(u).trim())
         .filter(Boolean)
@@ -312,6 +324,7 @@ const server = http.createServer(async (req, res) => {
           url: parsed.href,
           status: "menunggu",
           progress: 0,
+          settings,
         };
         downloads.unshift(d);
         downloadChain = downloadChain.then(() => runDownload(d));

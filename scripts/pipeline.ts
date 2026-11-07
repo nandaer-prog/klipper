@@ -4,6 +4,7 @@ import path from "node:path";
 import { WORK } from "./config";
 import { pickClips, type ClipPlan } from "./pick-clips";
 import { renderClips } from "./render-clips";
+import { defaultSettings, type JobSettings } from "./settings";
 import { removeJob, setJob } from "./status";
 import { transcribeVideo } from "./transcribe";
 
@@ -35,13 +36,14 @@ export type Job = {
   id: string;
   videoPath: string;
   workDir: string;
+  settings: JobSettings;
   captions?: Caption[];
   clips?: ClipPlan[];
 };
 
-export const makeJob = (videoPath: string): Job => {
+export const makeJob = (videoPath: string, settings: JobSettings = defaultSettings()): Job => {
   const id = slug(videoPath);
-  return { id, videoPath, workDir: path.join(WORK, id) };
+  return { id, videoPath, workDir: path.join(WORK, id), settings };
 };
 
 export const stageTranscribe = async (j: Job) => {
@@ -59,7 +61,7 @@ export const stageTranscribe = async (j: Job) => {
 export const stageClaude = async (j: Job) => {
   await setJob(j.id, { stage: STAGE.claude, detail: "" });
   if (!j.captions) throw new Error("Transkrip belum ada");
-  j.clips = await pickClips(j.captions, probeDuration(j.videoPath), j.workDir);
+  j.clips = await pickClips(j.captions, probeDuration(j.videoPath), j.workDir, j.settings);
   console.log(`[${j.id}] Claude memilih ${j.clips.length} klip:`);
   for (const c of j.clips) {
     console.log(`  ${c.start.toFixed(1)}-${c.end.toFixed(1)}s  ${c.title}`);
@@ -69,7 +71,7 @@ export const stageClaude = async (j: Job) => {
 export const stageRender = async (j: Job) => {
   await setJob(j.id, { stage: STAGE.render, detail: "" });
   if (!j.captions || !j.clips) throw new Error("Transkrip atau daftar klip belum ada");
-  await renderClips(j.id, j.videoPath, j.clips, j.captions);
+  await renderClips(j.id, j.videoPath, j.clips, j.captions, j.settings);
 };
 
 /** Jalankan semua tahap berurutan untuk satu video (dipakai oleh `npm run clip`). */

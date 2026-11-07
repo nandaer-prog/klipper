@@ -11,3 +11,5 @@ output/
 work/
 public/work/
 .whisper/
+.venv/
+__pycache__/
