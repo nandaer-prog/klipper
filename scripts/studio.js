@@ -1,353 +1,318 @@
 /* eslint-disable @remotion/deterministic-randomness -- kode browser, bukan komposisi Remotion */
-/* global document, window, requestAnimationFrame, performance, matchMedia, setInterval */
-// Studio pixel-art untuk dashboard Clipper: karakter berjalan antar meja sesuai tahap pipeline.
-// Semua gambar dibuat lewat kode (tanpa aset eksternal).
-(() => {
-const W = 480;
-const H = 270;
+/* global document, window, performance, matchMedia, ResizeObserver, setInterval */
+// Virtual Office AI Agent: kantor 3D isometrik. Karakter berjalan dan bekerja sesuai tahap pipeline.
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+
 const $ = (id) => document.getElementById(id);
 const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
-const short = (s, n = 30) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
-const speedFactor = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.4 : 1;
+const short = (s, n = 24) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+const clean = (f) => short(String(f || "").replace(/\.[a-z0-9]{2,4}$/i, ""), 22);
+const SPEED = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.4 : 1;
 
-const cv = $("floor");
-cv.width = W;
-cv.height = H;
-const ctx = cv.getContext("2d");
-const layer = () => {
+const host = $("office");
+const bubbleLayer = $("bubbles");
+
+// ---------- Renderer, kamera, cahaya ----------
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+host.insertBefore(renderer.domElement, bubbleLayer);
+
+const scene = new THREE.Scene();
+const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.1, 100);
+camera.position.set(16, 13.5, 16);
+const TARGET = new THREE.Vector3(0, 0.4, 0);
+camera.lookAt(TARGET);
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.copy(TARGET);
+controls.enableDamping = true;
+controls.enablePan = false;
+controls.minZoom = 0.75;
+controls.maxZoom = 2.4;
+controls.minPolarAngle = 0.55;
+controls.maxPolarAngle = 1.2;
+controls.minAzimuthAngle = Math.PI / 4 - 0.55;
+controls.maxAzimuthAngle = Math.PI / 4 + 0.55;
+controls.update();
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0xdbe6f4, 1.35));
+const sun = new THREE.DirectionalLight(0xfff3df, 1.9);
+sun.position.set(10, 16, 6);
+sun.castShadow = true;
+sun.shadow.mapSize.set(2048, 2048);
+Object.assign(sun.shadow.camera, { left: -16, right: 16, top: 12, bottom: -12, near: 1, far: 50 });
+sun.shadow.bias = -0.0004;
+sun.shadow.radius = 4;
+scene.add(sun);
+
+const world = new THREE.Group();
+scene.add(world);
+
+// ---------- Helper bentuk ----------
+const mats = {};
+const M = (color, o = {}) => {
+  const key = color + JSON.stringify(o);
+  return (mats[key] ??= new THREE.MeshStandardMaterial({ color, roughness: 0.72, metalness: 0.03, ...o }));
+};
+const box = (w, h, d, material, x, y, z, parent = world, cast = true) => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), material);
+  m.position.set(x, y, z);
+  m.castShadow = cast;
+  m.receiveShadow = true;
+  parent.add(m);
+  return m;
+};
+const cyl = (rt, rb, h, material, x, y, z, parent = world, seg = 16) => {
+  const m = new THREE.Mesh(new THREE.CylinderGeometry(rt, rb, h, seg), material);
+  m.position.set(x, y, z);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  parent.add(m);
+  return m;
+};
+const sph = (r, material, x, y, z, parent = world, sx = 1, sy = 1, sz = 1) => {
+  const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), material);
+  m.position.set(x, y, z);
+  m.scale.set(sx, sy, sz);
+  m.castShadow = true;
+  parent.add(m);
+  return m;
+};
+
+// ---------- Lantai dan dinding ----------
+const floorTex = (() => {
   const c = document.createElement("canvas");
-  c.width = W;
-  c.height = H;
-  return c;
-};
-const bgC = layer();
-const fgC = layer();
-
-const R = (c, x, y, w, h, col) => {
-  c.fillStyle = col;
-  c.fillRect(Math.round(x), Math.round(y), w, h);
-};
-const mk = (seed) => {
-  let s = seed >>> 0;
-  return () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
-};
-const OL = "#2b1d14";
-
-// ---------- Perabot ----------
-const desk = (c, x, y, w, h = 14) => {
-  R(c, x - 1, y - 1, w + 2, h + 9, OL);
-  R(c, x, y, w, h, "#dca56a");
-  R(c, x, y, w, 1, "#efc68f");
-  R(c, x, y + h, w, 7, "#9d6b3a");
-  R(c, x, y + h + 5, w, 2, "#7a5128");
-  R(c, x + 3, y + h + 1, 10, 5, "#86592d");
-  R(c, x + w - 13, y + h + 1, 10, 5, "#86592d");
-};
-const monitor = (c, x, y, w = 14, h = 10) => {
-  R(c, x - 1, y - 1, w + 2, h + 3, "#1f2433");
-  R(c, x, y, w, h, "#16213e");
-  R(c, x + w / 2 - 1, y + h + 2, 2, 2, "#555");
-  R(c, x + w / 2 - 4, y + h + 4, 8, 1, "#444");
-};
-const keyboard = (c, x, y) => {
-  R(c, x, y, 12, 4, "#2a2f3a");
-  R(c, x + 1, y + 1, 10, 1, "#555b6b");
-  R(c, x + 1, y + 3, 10, 1, "#555b6b");
-};
-const chair = (c, x, y, col, dark) => {
-  R(c, x - 1, y - 1, 12, 10, OL);
-  R(c, x, y, 10, 8, dark);
-  R(c, x - 1, y + 8, 12, 6, OL);
-  R(c, x, y + 8, 10, 4, col);
-  R(c, x + 4, y + 14, 2, 3, "#333");
-  R(c, x, y + 17, 10, 1, "#333");
-};
-const stool = (c, x, y, col) => {
-  R(c, x - 1, y - 1, 10, 6, OL);
-  R(c, x, y, 8, 4, col);
-  R(c, x + 1, y + 5, 1, 4, "#444");
-  R(c, x + 6, y + 5, 1, 4, "#444");
-};
-const plant = (c, x, y, s, seed) => {
-  const r = mk(seed);
-  const greens = ["#2f7d3c", "#3f9b4b", "#5cb85c", "#276a33"];
-  R(c, x - 5 * s, y - 6 * s, 10 * s, 6 * s, OL);
-  R(c, x - 4 * s, y - 5 * s, 8 * s, 5 * s, "#a55e30");
-  R(c, x - 4 * s, y - 5 * s, 8 * s, 1 * s, "#c9803f");
-  for (let i = 0; i < 16; i++) {
-    const lx = x + (r() * 16 - 8) * s;
-    const ly = y - 8 * s - r() * 16 * s;
-    R(c, lx, ly, 5 * s, 4 * s, greens[Math.floor(r() * 4)]);
+  c.width = 512;
+  c.height = 512;
+  const g = c.getContext("2d");
+  g.fillStyle = "#ead3ab";
+  g.fillRect(0, 0, 512, 512);
+  let s = 7;
+  const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+  for (let x = 0; x < 512; x += 32) {
+    g.fillStyle = `rgba(${150 + rnd() * 40},${105 + rnd() * 30},${60 + rnd() * 20},${0.1 + rnd() * 0.12})`;
+    g.fillRect(x, 0, 32, 512);
+    g.fillStyle = "rgba(120,80,40,.28)";
+    g.fillRect(x, 0, 1.5, 512);
+    for (let y = rnd() * 200; y < 512; y += 180 + rnd() * 140) g.fillRect(x, y, 32, 1.5);
   }
-};
-const carpet = (c, x, y, w, h, base, accent) => {
-  R(c, x, y, w, h, base);
-  R(c, x, y, w, 3, accent);
-  R(c, x, y + h - 3, w, 3, accent);
-  R(c, x, y, 3, h, accent);
-  R(c, x + w - 3, y, 3, h, accent);
-  for (let i = 8; i < w - 8; i += 10) R(c, x + i, y + 6, 4, h - 12, accent === base ? base : "rgba(255,255,255,.1)");
-};
-const sofa = (c, x, y, w) => {
-  R(c, x - 4, y - 1, w + 8, 24, OL);
-  R(c, x, y, w, 10, "#1f5d3a");
-  R(c, x, y + 10, w, 10, "#2b7a4c");
-  R(c, x - 3, y + 4, 5, 16, "#1f5d3a");
-  R(c, x + w - 2, y + 4, 5, 16, "#1f5d3a");
-  R(c, x + 6, y + 3, 9, 8, "#f2b705");
-  R(c, x + w - 18, y + 3, 9, 8, "#e8452c");
-};
-const shelf = (c, x, y, w, h, seed) => {
-  const r = mk(seed);
-  R(c, x - 1, y - 1, w + 2, h + 2, OL);
-  R(c, x, y, w, h, "#7a4f2b");
-  const cols = ["#d94f4f", "#4f7bd9", "#e6b422", "#4fb36b", "#8e5bd0", "#ddd"];
-  for (let sy = y + 2; sy < y + h - 8; sy += 14) {
-    R(c, x, sy + 11, w, 2, "#a8723c");
-    for (let bx = x + 2; bx < x + w - 3; bx += 3) {
-      const bh = 6 + Math.floor(r() * 5);
-      R(c, bx, sy + 11 - bh, 2, bh, cols[Math.floor(r() * cols.length)]);
-    }
-  }
-};
-const board = (c, x, y, w, h, seed, notes = true) => {
-  const r = mk(seed);
-  R(c, x - 2, y - 2, w + 4, h + 4, "#9aa3b2");
-  R(c, x, y, w, h, "#fbfbf5");
-  if (notes) {
-    const cols = ["#ffd166", "#ef8fa3", "#7fd1ae", "#8ecbff", "#f4a259"];
-    for (let i = 0; i < 12; i++) R(c, x + 3 + r() * (w - 14), y + 3 + r() * (h - 12), 7, 6, cols[Math.floor(r() * cols.length)]);
-  }
-};
-const swatches = (c, x, y, w, h, seed) => {
-  const r = mk(seed);
-  R(c, x - 2, y - 2, w + 4, h + 4, "#3a3a4a");
-  const cols = ["#e8452c", "#2f5bd3", "#f2b705", "#2fa564", "#7b4bd6", "#e060a0", "#1f2a4d", "#f4a259"];
-  for (let yy = y; yy < y + h; yy += 8)
-    for (let xx = x; xx < x + w; xx += 8) R(c, xx, yy, 8, 8, cols[Math.floor(r() * cols.length)]);
-};
-const win = (c, x, y, w, h, seed, cols = 2) => {
-  const r = mk(seed);
-  R(c, x - 2, y - 2, w + 4, h + 4, "#2b3a67");
-  R(c, x, y, w, h, "#9fd3ff");
-  R(c, x, y, w, Math.floor(h * 0.45), "#bfe3ff");
-  for (let i = 0; i < 3; i++) R(c, x + r() * (w - 16), y + 3 + r() * 8, 14, 4, "#fff");
-  let bx = x;
-  while (bx < x + w) {
-    const bw = 6 + Math.floor(r() * 8);
-    const bh = 10 + Math.floor(r() * h * 0.55);
-    const col = ["#6f86a8", "#5b7194", "#8aa1c0", "#4f6488"][Math.floor(r() * 4)];
-    const ww = Math.min(bw, x + w - bx);
-    R(c, bx, y + h - bh, ww, bh, col);
-    for (let wy = y + h - bh + 2; wy < y + h - 2; wy += 4)
-      for (let wx = bx + 1; wx < bx + ww - 1; wx += 3) if (r() > 0.55) R(c, wx, wy, 1, 2, "#e9f4ff");
-    bx += bw;
-  }
-  for (let k = 1; k < cols; k++) R(c, x + Math.floor((k * w) / cols) - 1, y, 2, h, "#ece6d8");
-  R(c, x, y + Math.floor(h / 2) - 1, w, 2, "#ece6d8");
-};
-const tripod = (c, x, y) => {
-  for (let i = 0; i < 14; i++) {
-    R(c, x - 1 - Math.floor(i / 3), y + i, 1, 1, "#333");
-    R(c, x + 1 + Math.floor(i / 3), y + i, 1, 1, "#333");
-  }
-  R(c, x, y - 2, 1, 16, "#333");
-  R(c, x - 8, y - 12, 16, 10, "#222");
-  R(c, x - 7, y - 11, 14, 2, "#3b3b3b");
-  R(c, x + 8, y - 10, 5, 6, "#5b7fb8");
-};
-const cabinet = (c, x, y) => {
-  R(c, x - 1, y - 1, 20, 28, OL);
-  R(c, x, y, 18, 26, "#cfd3da");
-  R(c, x, y + 8, 18, 1, "#9aa0ab");
-  R(c, x, y + 17, 18, 1, "#9aa0ab");
-  R(c, x + 6, y + 4, 6, 1, "#666");
-  R(c, x + 6, y + 13, 6, 1, "#666");
-  R(c, x + 6, y + 21, 6, 1, "#666");
-};
-const printer = (c, x, y) => {
-  R(c, x - 1, y - 1, 26, 18, OL);
-  R(c, x, y, 24, 16, "#c9ced6");
-  R(c, x + 3, y + 3, 18, 3, "#555");
-  R(c, x + 4, y + 10, 16, 2, "#f6f6f0");
-};
-const coffeeBar = (c, x, y, w) => {
-  R(c, x - 1, y - 1, w + 2, 33, OL);
-  R(c, x, y, w, 8, "#efe6cd");
-  R(c, x, y + 8, w, 22, "#23407a");
-  R(c, x, y + 8, w, 2, "#1a3160");
-  R(c, x + 8, y - 12, 12, 12, "#4a4a55");
-  R(c, x + 10, y - 9, 8, 4, "#9aa");
-  R(c, x + 12, y - 3, 4, 3, "#c33");
-  for (let i = 0; i < 3; i++) R(c, x + 30 + i * 8, y - 4, 5, 4, "#f6f0e0");
-  R(c, x + w - 18, y - 6, 12, 6, "#b07a45");
-};
-
-// ---------- Latar statis ----------
-const drawBackground = (c) => {
-  // lantai kayu
-  R(c, 0, 56, W, H - 56, "#c98f4e");
-  for (let y = 56; y < H; y += 9) {
-    R(c, 0, y, W, 1, "#b5793a");
-    for (let x = (y * 7) % 47; x < W; x += 47) R(c, x, y, 1, 9, "#b5793a");
-  }
-  c.globalAlpha = 0.2;
-  c.fillStyle = "#fff0c0";
-  c.beginPath();
-  c.moveTo(176, 58);
-  c.lineTo(300, 58);
-  c.lineTo(350, 150);
-  c.lineTo(210, 150);
-  c.closePath();
-  c.fill();
-  c.globalAlpha = 1;
-
-  // dinding bata
-  R(c, 0, 0, W, 56, "#ebe5d6");
-  for (let y = 0, row = 0; y < 52; y += 7, row++) {
-    R(c, 0, y + 6, W, 1, "#cfc6b3");
-    for (let x = row % 2 ? 7 : 0; x < W; x += 14) R(c, x, y, 1, 6, "#cfc6b3");
-  }
-  R(c, 0, 52, W, 4, "#a89a82");
-  R(c, 0, 56, W, 2, "#7d6a4f");
-
-  // jendela dan dekorasi dinding
-  win(c, 178, 8, 124, 38, 11, 4);
-  win(c, 8, 10, 30, 34, 5, 2);
-  win(c, 444, 10, 28, 34, 7, 2);
-  board(c, 62, 10, 54, 32, 3);
-  swatches(c, 356, 12, 48, 30, 9);
-  shelf(c, 128, 12, 38, 38, 21);
-  shelf(c, 30, 62, 20, 34, 4);
-  R(c, 8, 54, 14, 34, "#2f5bd3"); // pintu
-  R(c, 8, 54, 14, 2, OL);
-  R(c, 18, 70, 2, 3, "#f2b705");
-
-  // karpet
-  carpet(c, 46, 76, 94, 46, "#38539a", "#27407a"); // strategi
-  carpet(c, 14, 134, 88, 52, "#c8662f", "#a04e1f"); // lounge
-  carpet(c, 34, 186, 116, 62, "#b53a2e", "#8a2a20"); // client review
-
-  // strategi (dekor)
-  desk(c, 58, 88, 72, 14);
-  R(c, 70, 84, 14, 5, "#f6f6f0");
-  R(c, 100, 85, 10, 4, "#f2b705");
-  chair(c, 68, 108, "#2f5bd3", "#24459f");
-  chair(c, 104, 108, "#2f5bd3", "#24459f");
-  board(c, 28, 62, 22, 28, 15);
-
-  // lounge
-  sofa(c, 24, 142, 60);
-  R(c, 36, 164, 32, 14, OL);
-  R(c, 37, 165, 30, 12, "#a97a45");
-  R(c, 44, 166, 6, 4, "#f6f0e0");
-  R(c, 54, 168, 6, 4, "#f6f0e0");
-  R(c, 80, 168, 14, 12, OL);
-  R(c, 81, 169, 12, 10, "#e8742f");
-  printer(c, 6, 118);
-
-  // client review
-  desk(c, 52, 202, 82, 16);
-  R(c, 62, 198, 12, 5, "#f6f6f0");
-  R(c, 90, 198, 10, 5, "#f6f6f0");
-  R(c, 82, 195, 14, 8, "#2a2f3a");
-  [60, 86, 112].forEach((cx) => chair(c, cx, 184, "#e8742f", "#c25a1d"));
-
-  // studio hub (tengah)
-  desk(c, 192, 140, 70, 20);
-  R(c, 200, 137, 10, 4, "#f6f6f0");
-  R(c, 240, 138, 12, 4, "#f6f6f0");
-  R(c, 222, 144, 12, 6, "#dfe6f2");
-  R(c, 214, 148, 4, 4, "#f6f0e0");
-  stool(c, 186, 148, "#f2b705");
-  stool(c, 266, 148, "#2f5bd3");
-  stool(c, 204, 170, "#f2b705");
-  stool(c, 248, 170, "#2f5bd3");
-  plant(c, 227, 141, 1, 77);
-
-  // creative
-  desk(c, 248, 74, 92, 14);
-  monitor(c, 258, 62, 17, 11);
-  monitor(c, 280, 62, 17, 11);
-  monitor(c, 302, 62, 17, 11);
-  keyboard(c, 262, 78);
-  keyboard(c, 286, 78);
-  R(c, 326, 76, 8, 6, "#f6f6f0");
-  chair(c, 288, 96, "#2f5bd3", "#24459f");
-  R(c, 346, 82, 24, 28, OL);
-  swatches(c, 348, 84, 20, 20, 33);
-  R(c, 356, 106, 4, 14, "#6b4a2a");
-
-  // production
-  R(c, 380, 94, 4, 62, "#e8e8e8");
-  R(c, 380, 94, 4, 2, "#9aa0ab");
-  desk(c, 392, 120, 60, 14);
-  monitor(c, 404, 104, 28, 16);
-  monitor(c, 436, 108, 12, 9);
-  keyboard(c, 410, 124);
-  R(c, 440, 104, 10, 14, "#2a2f3a");
-  tripod(c, 352, 140);
-  chair(c, 418, 144, "#7b4bd6", "#5d36a8");
-  cabinet(c, 440, 62);
-
-  // media lab
-  desk(c, 330, 198, 122, 14);
-  [338, 358, 378, 398, 418].forEach((mx) => monitor(c, mx, 186, 15, 10));
-  [340, 380, 420].forEach((kx) => keyboard(c, kx, 202));
-  [346, 386, 426].forEach((cx) => chair(c, cx, 218, "#2f5bd3", "#24459f"));
-  shelf(c, 458, 168, 16, 50, 51);
-
-  // coffee bar
-  coffeeBar(c, 196, 214, 66);
-
-  // tanaman
-  plant(c, 24, 62, 2, 1);
-  plant(c, 162, 100, 1, 2);
-  plant(c, 346, 66, 1, 3);
-  plant(c, 462, 74, 2, 4);
-  plant(c, 22, 244, 2, 5);
-  plant(c, 158, 156, 1, 6);
-  plant(c, 280, 250, 2, 7);
-  plant(c, 468, 150, 2, 8);
-
-  // dekor lantai
-  R(c, 290, 130, 18, 4, "rgba(0,0,0,.08)");
-};
-drawBackground(bgC.getContext("2d"));
-
-// lapisan depan (menutupi karakter)
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(2.5, 1.5);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.anisotropy = 4;
+  return t;
+})();
+box(20.8, 0.5, 12.8, M(0xf6f3ec), 0, -0.3, 0);
+box(20.9, 0.08, 12.9, M(0xcdb892), 0, -0.52, 0);
 {
-  const c = fgC.getContext("2d");
-  R(c, 128, 252, 74, 18, OL);
-  R(c, 130, 254, 70, 16, "#4a5d3a");
-  R(c, 130, 254, 70, 3, "#6b8a52");
-  R(c, 290, 254, 52, 16, OL);
-  R(c, 292, 256, 48, 14, "#4a5d3a");
-  R(c, 292, 256, 48, 3, "#6b8a52");
-  const r = mk(99);
-  const greens = ["#2f7d3c", "#3f9b4b", "#5cb85c", "#276a33"];
-  for (let i = 0; i < 26; i++) R(c, 130 + r() * 66, 244 + r() * 12, 6, 5, greens[Math.floor(r() * 4)]);
-  for (let i = 0; i < 18; i++) R(c, 292 + r() * 44, 246 + r() * 12, 6, 5, greens[Math.floor(r() * 4)]);
-  plant(c, 12, 270, 3, 12);
-  R(c, 222, 262, 36, 8, "#1c2236");
+  const f = new THREE.Mesh(new THREE.BoxGeometry(20, 0.1, 12), new THREE.MeshStandardMaterial({ map: floorTex, roughness: 0.55 }));
+  f.position.set(0, -0.05, 0);
+  f.receiveShadow = true;
+  world.add(f);
+}
+// dinding belakang (z=-6) dan kiri (x=-10)
+const WALL = M(0xf4efe6);
+const TRIM = M(0xd9c6a2);
+box(20.4, 2.3, 0.3, WALL, 0, 1.15, -6.15);
+box(20.4, 0.12, 0.34, TRIM, 0, 2.34, -6.15);
+box(20.4, 0.5, 0.34, TRIM, 0, 0.25, -6.15);
+box(0.3, 2.3, 12.4, WALL, -10.15, 1.15, 0);
+box(0.34, 0.12, 12.4, TRIM, -10.15, 2.34, 0);
+box(0.34, 0.5, 12.4, TRIM, -10.15, 0.25, 0);
+{
+  const glass = M(0xbfe3f5, { transparent: true, opacity: 0.55, roughness: 0.1 });
+  [-6, 0, 6].forEach((x) => {
+    box(3.2, 1.1, 0.06, glass, x, 1.45, -5.97, world, false);
+    box(3.3, 0.06, 0.1, M(0xffffff), x, 2.02, -5.96, world, false);
+    box(3.3, 0.06, 0.1, M(0xffffff), x, 0.9, -5.96, world, false);
+    box(0.06, 1.1, 0.1, M(0xffffff), x, 1.45, -5.96, world, false);
+  });
+  [-3.5, 2.5].forEach((z) => {
+    box(0.06, 1.1, 3.0, glass, -9.97, 1.45, z, world, false);
+    box(0.1, 0.06, 3.1, M(0xffffff), -9.96, 2.02, z, world, false);
+  });
 }
 
-// ---------- Peta jalan ----------
+// ---------- Perabot ----------
+const GLASS = new THREE.MeshPhysicalMaterial({ color: 0xcfeaf5, transparent: true, opacity: 0.26, roughness: 0.05, side: THREE.DoubleSide });
+const ALU = M(0xdfe3ea);
+const glassPanel = (w, d, x, z) => {
+  const horizontal = w > d;
+  box(w, 1.8, d, GLASS, x, 0.9, z, world, false);
+  box(w, 0.06, d, ALU, x, 1.82, z);
+  box(w, 0.06, d, ALU, x, 0.03, z);
+  const n = Math.max(1, Math.round((horizontal ? w : d) / 1.8));
+  for (let i = 0; i <= n; i++) {
+    const t = (i / n - 0.5) * (horizontal ? w : d);
+    box(horizontal ? 0.06 : d + 0.0, 1.8, horizontal ? 0.06 : 0.06, ALU, horizontal ? x + t : x, 0.9, horizontal ? z : z + t);
+  }
+};
+
+const screenMats = [[], [], [], [], []];
+const STATION_COLORS = [0xf59e0b, 0x14b8a6, 0x8b5cf6, 0xef4444, 0x22c55e];
+
+const monitor = (g, x, z, si, w = 0.74) => {
+  box(0.1, 0.22, 0.1, M(0x4b5563), x, 0.86, z, g);
+  box(0.38, 0.03, 0.22, M(0x4b5563), x, 0.77, z, g);
+  box(w, 0.44, 0.05, M(0x1c2230), x, 1.14, z, g);
+  const scr = new THREE.MeshStandardMaterial({ color: 0x23324f, emissive: STATION_COLORS[si], emissiveIntensity: 0.05, roughness: 0.3 });
+  const plane = new THREE.Mesh(new THREE.PlaneGeometry(w - 0.08, 0.36), scr);
+  plane.position.set(x, 1.14, z - 0.028);
+  plane.rotation.y = Math.PI; // layar menghadap -z (ke arah kursi)
+  g.add(plane);
+  screenMats[si].push(scr);
+};
+
+const desk = (x, z, si, monitors = 1) => {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  world.add(g);
+  box(2.3, 0.08, 1.05, M(0xecd2a8), 0, 0.75, 0, g);
+  [[-1.05, -0.45], [1.05, -0.45], [-1.05, 0.45], [1.05, 0.45]].forEach(([lx, lz]) => box(0.07, 0.72, 0.07, M(0xf3f3f1), lx, 0.36, lz, g));
+  box(0.5, 0.45, 0.8, M(0xf3f3f1), 0.75, 0.5, 0, g);
+  box(0.5, 0.08, 0.8, M(0xe0c698), 0.75, 0.27, 0, g, false);
+  if (monitors === 1) monitor(g, 0, 0.12, si);
+  else {
+    monitor(g, -0.5, 0.12, si, 0.66);
+    monitor(g, 0.38, 0.12, si, 0.66);
+  }
+  box(0.5, 0.025, 0.16, M(0x2a2f3a), -0.05, 0.795, -0.3, g, false);
+  box(0.09, 0.03, 0.13, M(0x2a2f3a), 0.5, 0.795, -0.3, g, false);
+  box(0.16, 0.12, 0.12, M(0xffffff), -0.95, 0.85, 0.2, g, false);
+  return g;
+};
+
+const chair = (x, z, rot = 0) => {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.rotation.y = rot;
+  world.add(g);
+  const dark = M(0x2a2e38);
+  cyl(0.28, 0.28, 0.04, dark, 0, 0.1, 0, g, 5);
+  cyl(0.04, 0.04, 0.22, dark, 0, 0.2, 0, g);
+  box(0.52, 0.09, 0.5, dark, 0, 0.34, 0, g);
+  box(0.5, 0.55, 0.08, dark, 0, 0.66, -0.25, g);
+  box(0.06, 0.18, 0.3, dark, -0.3, 0.45, 0, g, false);
+  box(0.06, 0.18, 0.3, dark, 0.3, 0.45, 0, g, false);
+  return g;
+};
+
+const plant = (x, z, s = 1) => {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.scale.setScalar(s);
+  world.add(g);
+  cyl(0.28, 0.2, 0.42, M(0xf1ede4), 0, 0.21, 0, g);
+  const greens = [0x2f8f4e, 0x3da35d, 0x58b86f, 0x287a43];
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * Math.PI * 2;
+    const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.13, 0.85 + (i % 3) * 0.15, 6), M(greens[i % 4]));
+    leaf.position.set(Math.cos(a) * 0.14, 0.78, Math.sin(a) * 0.14);
+    leaf.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5);
+    leaf.castShadow = true;
+    g.add(leaf);
+  }
+  return g;
+};
+
+// stasiun kerja
+const DESKS = [
+  { x: -6, z: 2.5, mon: 1 },
+  { x: -2, z: 1.5, mon: 2 },
+  { x: 5.5, z: -3.2, mon: 2 },
+  { x: 6.5, z: 3.0, mon: 2 },
+  { x: -6.5, z: -3.5, mon: 1 },
+];
+DESKS.forEach((d, i) => {
+  desk(d.x, d.z, i, d.mon);
+});
+
+// ruang kaca Claude Editor
+glassPanel(5.4, 0.08, 7.3, -1.2);
+glassPanel(0.08, 4.8, 3.0, -3.6);
+box(0.12, 1.8, 0.12, ALU, 4.6, 0.9, -1.2);
+box(0.12, 1.8, 0.12, ALU, 3.0, 0.9, -1.2);
+box(2.6, 0.04, 1.6, M(0xdfe9f5), 7.6, 0.02, -3.6, world, false); // karpet ruang
+
+// sekat kain
+box(0.1, 0.95, 1.6, M(0x93a98a), -4.0, 0.48, 1.6);
+box(0.1, 0.95, 1.6, M(0x93a98a), 2.2, 0.48, 1.6);
+
+// sofa area istirahat
+{
+  const g = new THREE.Group();
+  g.position.set(0, 0, -5.1);
+  world.add(g);
+  const sofa = M(0x7f9a70);
+  box(2.8, 0.45, 1.0, sofa, 0, 0.25, 0, g);
+  box(2.8, 0.7, 0.3, sofa, 0, 0.7, -0.4, g);
+  box(0.3, 0.6, 1.0, M(0x6f8a62), -1.4, 0.45, 0, g);
+  box(0.3, 0.6, 1.0, M(0x6f8a62), 1.4, 0.45, 0, g);
+  box(0.5, 0.4, 0.14, M(0xf4c95d), -0.7, 0.62, -0.2, g);
+  box(0.5, 0.4, 0.14, M(0xe58f6b), 0.7, 0.62, -0.2, g);
+  cyl(0.55, 0.55, 0.05, M(0xecd2a8), 0, 0.42, 1.55, world);
+  cyl(0.06, 0.06, 0.4, M(0x8a6a3c), 0, 0.2, -3.55, world);
+  box(0.9, 0.05, 0.6, M(0xecd2a8), 0, 0.43, -3.5, world);
+}
+// meja bundar + bangku
+cyl(0.85, 0.85, 0.07, M(0xecd2a8), 1.8, 0.72, 3.5);
+cyl(0.1, 0.1, 0.7, M(0x8a6a3c), 1.8, 0.35, 3.5);
+[[0.9, 3.0], [2.7, 3.0], [1.8, 2.4]].forEach(([sx, sz]) => {
+  cyl(0.24, 0.24, 0.3, M(0x2a2e38), sx, 0.2, sz);
+});
+box(0.5, 0.03, 0.4, M(0xffffff), 1.5, 0.77, 3.4);
+box(0.3, 0.1, 0.3, M(0xf59e0b), 2.1, 0.8, 3.6);
+// rak buku dan lemari
+{
+  const g = new THREE.Group();
+  g.position.set(-3, 0, -5.7);
+  world.add(g);
+  box(2.4, 1.6, 0.45, M(0xd9b98a), 0, 0.8, 0, g);
+  let s = 3;
+  const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const bookCols = [0xd94f4f, 0x4f7bd9, 0xe6b422, 0x4fb36b, 0x8e5bd0, 0xf2f2f2];
+  [0.35, 0.8, 1.25].forEach((by) => {
+    box(2.3, 0.04, 0.4, M(0xb8935f), 0, by - 0.1, 0.02, g, false);
+    for (let bx = -1.05; bx < 1.0; bx += 0.14) {
+      const bh = 0.25 + rnd() * 0.2;
+      box(0.1, bh, 0.28, M(bookCols[Math.floor(rnd() * 6)]), bx, by - 0.08 + bh / 2, 0.05, g, false);
+    }
+  });
+}
+box(1.8, 0.75, 0.55, M(0xd9b98a), 4.5, 0.38, 5.6);
+box(1.7, 0.04, 0.5, M(0xecd2a8), 4.5, 0.77, 5.6);
+box(0.5, 0.35, 0.4, M(0xffffff), 4.1, 0.97, 5.6);
+// printer
+box(0.9, 0.5, 0.6, M(0xe5e8ee), 9.2, 0.25, 4.0);
+box(0.7, 0.08, 0.4, M(0x4b5563), 9.2, 0.54, 4.0);
+
+[[-9.3, -5.2, 1.6], [-9.3, 5.4, 1.3], [9.4, 5.3, 1.4], [9.4, -5.3, 1.5], [2.9, 5.4, 1], [-0.9, -5.6, 1.1], [3.6, -1.9, 0.9], [-4.6, -5.4, 1]].forEach(([x, z, s]) => plant(x, z, s));
+
+// kursi di tiap meja kerja (di sisi utara meja)
+const SEATS = [
+  { x: -6, z: 1.4 },
+  { x: -2, z: 0.4 },
+  { x: 5.5, z: -4.3 },
+  { x: 6.5, z: 1.9 },
+  { x: -6.5, z: -4.6 },
+];
+SEATS.forEach((s) => chair(s.x, s.z - 0.05, Math.PI));
+chair(-4.2, 1.0, Math.PI * 0.5);
+
+// ---------- Jalur jalan ----------
 const NODES = {
-  n0: [160, 128],
-  n1: [225, 122],
-  n2: [296, 124],
-  n3: [372, 166],
-  n4: [300, 186],
-  n5: [170, 196],
-  n6: [160, 164],
-  n8: [318, 238],
-  n9: [140, 246],
+  A: [-8.2, -0.5], B: [-6, -0.5], C: [-4, -0.5], D: [-2, -0.5], E: [-0.2, -0.5], F: [3.8, -0.5], G: [6.5, -0.5], H: [8.8, -0.5],
+  R1: [3.8, -2.4], R2: [3.6, -4.4], P: [-8.2, -4.6],
+  W: [-8.2, 5.0], FZ: [-3, 5.0], V2: [-0.2, 5.0], Y: [3.5, 5.0], X: [8.8, 5.0],
 };
 const EDGES = [
-  ["n0", "n1"], ["n1", "n2"], ["n2", "n3"], ["n2", "n4"], ["n3", "n4"],
-  ["n4", "n5"], ["n5", "n6"], ["n6", "n0"], ["n4", "n8"], ["n5", "n9"],
+  ["A", "B"], ["B", "C"], ["C", "D"], ["D", "E"], ["E", "F"], ["F", "G"], ["G", "H"], ["F", "R1"], ["R1", "R2"],
+  ["A", "P"], ["A", "W"], ["W", "FZ"], ["FZ", "V2"], ["V2", "Y"], ["Y", "X"], ["H", "X"], ["E", "V2"],
 ];
 const ADJ = {};
 EDGES.forEach(([a, b]) => {
@@ -355,10 +320,10 @@ EDGES.forEach(([a, b]) => {
   (ADJ[a] ??= []).push([b, d]);
   (ADJ[b] ??= []).push([a, d]);
 });
-const nearestNode = (x, y) =>
+const nearestNode = (x, z) =>
   Object.keys(NODES).reduce(
-    (best, k) => (Math.hypot(NODES[k][0] - x, NODES[k][1] - y) < Math.hypot(NODES[best][0] - x, NODES[best][1] - y) ? k : best),
-    "n0",
+    (best, k) => (Math.hypot(NODES[k][0] - x, NODES[k][1] - z) < Math.hypot(NODES[best][0] - x, NODES[best][1] - z) ? k : best),
+    "A",
   );
 const dijkstra = (a, b) => {
   const dist = {};
@@ -384,455 +349,630 @@ const dijkstra = (a, b) => {
   for (let k = b; k; k = prev[k]) out.unshift(k);
   return out;
 };
-const route = (x, y, to) => {
-  const a = nearestNode(x, y);
-  const b = to.via || nearestNode(to.x, to.y);
-  const pts = dijkstra(a, b).map((n) => ({ x: NODES[n][0], y: NODES[n][1] }));
-  pts.push({ x: to.x, y: to.y });
+const route = (x, z, to) => {
+  const a = nearestNode(x, z);
+  const b = to.via || nearestNode(to.x, to.z);
+  const pts = dijkstra(a, b).map((n) => ({ x: NODES[n][0], z: NODES[n][1] }));
+  pts.push({ x: to.x, z: to.z });
   return pts;
 };
 
-// ---------- Stasiun, titik santai, agen ----------
 const STATIONS = [
-  { name: "STUDIO HUB", sub: "Antrean & Unduh", seat: { x: 227, y: 180, via: "n5" }, card: { x: 227, y: 146 }, sign: [227, 134], screens: [[222, 145, 10, 6]] },
-  { name: "MEDIA LAB", sub: "Transkripsi", seat: { x: 392, y: 236, via: "n8" }, card: { x: 392, y: 205 }, sign: [392, 178], screens: [[338, 186, 15, 10], [358, 186, 15, 10], [378, 186, 15, 10], [398, 186, 15, 10], [418, 186, 15, 10]] },
-  { name: "CREATIVE", sub: "Claude Editor", seat: { x: 292, y: 112, via: "n2" }, card: { x: 292, y: 84 }, sign: [292, 58], screens: [[258, 62, 17, 11], [280, 62, 17, 11], [302, 62, 17, 11]] },
-  { name: "PRODUCTION", sub: "Render", seat: { x: 424, y: 158, via: "n3" }, card: { x: 424, y: 128 }, sign: [424, 100], screens: [[404, 104, 28, 16], [436, 108, 12, 9]] },
-  { name: "CLIENT REVIEW", sub: "Hasil Klip", seat: { x: 94, y: 240, via: "n9" }, card: { x: 94, y: 212 }, sign: [92, 196], screens: [[82, 195, 14, 8]] },
+  { name: "Antrean & Unduh", seat: { ...SEATS[0], via: "B" }, visit: { x: -4.7, z: 1.0, via: "B" } },
+  { name: "Transkripsi", seat: { ...SEATS[1], via: "D" }, visit: { x: -0.9, z: 0.3, via: "D" } },
+  { name: "Claude Editor", seat: { ...SEATS[2], via: "R2" }, visit: { x: 3.8, z: -3.6, via: "R2" } },
+  { name: "Render", seat: { ...SEATS[3], via: "G" }, visit: { x: 7.9, z: 1.5, via: "G" } },
+  { name: "Hasil Klip", seat: { ...SEATS[4], via: "P" }, visit: { x: -8.2, z: -3.4, via: "A" } },
 ];
-const SPOTS = {
-  lounge: { x: 106, y: 166, via: "n6" },
-  coffee: { x: 232, y: 208, via: "n5" },
-  side: { x: 176, y: 186, via: "n5" },
-  window: { x: 225, y: 104, via: "n1" },
-  pitch: { x: 134, y: 114, via: "n0" },
-};
-const DEFS = [
-  { name: "Aoi", role: "Koordinator Unduhan", station: 0, shirt: "#2f5bd3", hair: "#2b2b3a", skin: "#f2c9a5", glasses: true },
-  { name: "Sora", role: "Juru Transkripsi", station: 1, shirt: "#f2b705", hair: "#5a3825", skin: "#e8b98f" },
-  { name: "Ren", role: "Editor Claude", station: 2, shirt: "#e8452c", hair: "#1e1e1e", skin: "#f2c9a5" },
-  { name: "Kai", role: "Operator Render", station: 3, shirt: "#7b4bd6", hair: "#c7c7d1", skin: "#d9a67a", glasses: true },
-  { name: "Miu", role: "Penjaga Hasil", station: 4, shirt: "#e060a0", hair: "#6b3a2a", skin: "#f2c9a5" },
-  { name: "Hina", role: "Asisten Studio", station: -1, shirt: "#2fa564", hair: "#8a5a2b", skin: "#f2c9a5" },
+const SPOTS = [
+  { x: 0, z: -2.4, via: "E" },
+  { x: -0.2, z: 3.4, via: "E" },
+  { x: 8.8, z: 2.0, via: "H" },
+  { x: -3.5, z: -3.6, via: "C" },
+  { x: -3, z: 4.2, via: "FZ" },
 ];
 
+// ---------- Karakter ----------
+const DEFS = [
+  { name: "Aoi", role: "Koordinator Unduhan", station: 0, shirt: 0x2f5bd3, hair: 0x2b2b3a, skin: 0xf2c9a5 },
+  { name: "Sora", role: "Juru Transkripsi", station: 1, shirt: 0xf2b705, hair: 0x5a3825, skin: 0xe8b98f },
+  { name: "Ren", role: "Editor Claude", station: 2, shirt: 0xe8452c, hair: 0x1e1e1e, skin: 0xf2c9a5 },
+  { name: "Kai", role: "Operator Render", station: 3, shirt: 0x7b4bd6, hair: 0xc7c7d1, skin: 0xd9a67a },
+  { name: "Miu", role: "Penjaga Hasil", station: 4, shirt: 0xe060a0, hair: 0x6b3a2a, skin: 0xf2c9a5 },
+  { name: "Hina", role: "Kurir Studio", station: -1, shirt: 0x2fa564, hair: 0x8a5a2b, skin: 0xf2c9a5 },
+];
+
+const buildAgent = (d) => {
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const dark = M(0x2d3550);
+  const torso = box(0.46, 0.56, 0.28, M(d.shirt), 0, 0.92, 0, body);
+  box(0.18, 0.2, 0.02, M(0xffffff), 0, 0.95, 0.15, body, false);
+  const head = new THREE.Group();
+  head.position.set(0, 1.4, 0);
+  body.add(head);
+  sph(0.21, M(d.skin), 0, 0, 0, head);
+  const hair = new THREE.Mesh(new THREE.SphereGeometry(0.225, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), M(d.hair));
+  hair.position.set(0, 0.02, -0.01);
+  hair.castShadow = true;
+  head.add(hair);
+  box(0.04, 0.06, 0.02, M(0x1b1b2f), -0.07, 0.0, 0.2, head, false);
+  box(0.04, 0.06, 0.02, M(0x1b1b2f), 0.07, 0.0, 0.2, head, false);
+
+  const leg = (sx) => {
+    const hip = new THREE.Group();
+    hip.position.set(sx * 0.12, 0.62, 0);
+    body.add(hip);
+    box(0.16, 0.3, 0.16, dark, 0, -0.15, 0, hip);
+    const knee = new THREE.Group();
+    knee.position.set(0, -0.3, 0);
+    hip.add(knee);
+    box(0.15, 0.28, 0.15, dark, 0, -0.14, 0, knee);
+    box(0.17, 0.07, 0.24, M(0x111827), 0, -0.3, 0.04, knee, false);
+    return { hip, knee };
+  };
+  const arm = (sx) => {
+    const sh = new THREE.Group();
+    sh.position.set(sx * 0.3, 1.16, 0);
+    body.add(sh);
+    box(0.12, 0.5, 0.12, M(d.shirt), 0, -0.24, 0, sh);
+    sph(0.07, M(d.skin), 0, -0.52, 0, sh);
+    return sh;
+  };
+  const legL = leg(-1);
+  const legR = leg(1);
+  const armL = arm(-1);
+  const armR = arm(1);
+  world.add(root);
+  return { root, body, head, legL, legR, armL, armR, torso };
+};
+
 const agents = DEFS.map((d, i) => {
-  const home = d.station >= 0 ? STATIONS[d.station].seat : SPOTS.lounge;
-  return {
+  const home = d.station >= 0 ? STATIONS[d.station].seat : SPOTS[0];
+  const rig = buildAgent(d);
+  const a = {
     ...d,
     i,
+    rig,
     x: home.x,
-    y: home.y,
-    dir: 1,
+    z: home.z,
+    face: 0,
     path: [],
     t: Math.random() * 10,
     idle: 1 + Math.random() * 4,
+    sit: d.station >= 0 ? 1 : 0,
     wantWork: false,
     working: false,
+    walking: false,
+    say: "",
+    sayUntil: 0,
+    errand: null,
   };
+  return a;
 });
+const courier = agents[5];
 
 const goTo = (a, target) => {
-  a.path = route(a.x, a.y, target);
+  a.path = route(a.x, a.z, target);
 };
 const pickIdle = (a) => {
-  const spots = Object.values(SPOTS);
+  const spots = [...SPOTS];
   if (a.station >= 0) spots.push(STATIONS[a.station].seat);
-  const far = spots.filter((s) => Math.hypot(s.x - a.x, s.y - a.y) > 24);
+  const far = spots.filter((s) => Math.hypot(s.x - a.x, s.z - a.z) > 2);
   goTo(a, far[Math.floor(Math.random() * far.length)]);
 };
+const sayFor = (a, text, secs) => {
+  a.say = text;
+  a.sayUntil = performance.now() + secs * 1000;
+};
 
-const stepAgent = (a, dt, activeStation) => {
-  const want = a.station >= 0 && a.station === activeStation;
-  if (want && !a.wantWork) {
-    a.wantWork = true;
-    goTo(a, STATIONS[a.station].seat);
+// kurir: antar video antar ruangan
+const errands = [];
+const requestErrand = (from, to, file) => {
+  errands.push({ from, to, file });
+  if (errands.length > 4) errands.shift();
+};
+const stepCourier = () => {
+  const a = courier;
+  if (a.errand) {
+    if (a.path.length === 0) {
+      const e = a.errand;
+      if (e.phase === 0) {
+        sayFor(a, `Mengambil ${clean(e.file)}`, 1.6);
+        e.phase = 1;
+        e.hold = 1.4;
+      } else if (e.phase === 1) {
+        e.hold -= 0.016;
+        if (e.hold <= 0) {
+          e.phase = 2;
+          goTo(a, STATIONS[e.to].visit);
+        }
+      } else if (e.phase === 2) {
+        sayFor(a, `Menyerahkan ke ${DEFS[e.to].name}`, 2.4);
+        e.phase = 3;
+        e.hold = 2;
+      } else {
+        e.hold -= 0.016;
+        if (e.hold <= 0) {
+          a.errand = null;
+          a.idle = 1;
+        }
+      }
+    }
+    return true;
   }
-  if (!want && a.wantWork) {
-    a.wantWork = false;
-    a.idle = 1.2;
+  if (errands.length) {
+    const e = errands.shift();
+    a.errand = { ...e, phase: 0 };
+    sayFor(a, `Menuju ruangan ${DEFS[e.from].name}`, 2.5);
+    goTo(a, STATIONS[e.from].visit);
+    return true;
   }
-  a.working = want && a.path.length === 0;
+  return false;
+};
 
-  if (!want && a.path.length === 0) {
-    a.idle -= dt;
-    if (a.idle <= 0) {
-      pickIdle(a);
-      a.idle = 5 + Math.random() * 8;
+const stepAgent = (a, dt, activeSet) => {
+  const want = a.station >= 0 && activeSet.has(a.station);
+  const busyCourier = a === courier && stepCourier();
+  if (!busyCourier) {
+    if (want && !a.wantWork) {
+      a.wantWork = true;
+      goTo(a, STATIONS[a.station].seat);
+    }
+    if (!want && a.wantWork) {
+      a.wantWork = false;
+      a.idle = 1.2;
+    }
+    if (!want && a.path.length === 0) {
+      a.idle -= dt;
+      if (a.idle <= 0) {
+        pickIdle(a);
+        a.idle = 5 + Math.random() * 8;
+      }
     }
   }
-
+  a.working = want && a.path.length === 0 && !busyCourier;
   a.t += dt;
   a.walking = a.path.length > 0;
+
   if (a.walking) {
     const p = a.path[0];
     const dx = p.x - a.x;
-    const dy = p.y - a.y;
-    const d = Math.hypot(dx, dy);
-    const sp = 34 * speedFactor * dt;
+    const dz = p.z - a.z;
+    const d = Math.hypot(dx, dz);
+    const sp = 1.9 * SPEED * dt;
     if (d <= sp) {
       a.x = p.x;
-      a.y = p.y;
+      a.z = p.z;
       a.path.shift();
     } else {
       a.x += (dx / d) * sp;
-      a.y += (dy / d) * sp;
-      if (Math.abs(dx) > 0.4) a.dir = dx > 0 ? 1 : -1;
+      a.z += (dz / d) * sp;
+      const target = Math.atan2(dx, dz);
+      let diff = target - a.face;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      a.face += diff * Math.min(1, dt * 10);
     }
+  } else if (a.working) {
+    // menghadap meja (ke +z)
+    let diff = -a.face;
+    while (diff > Math.PI) diff -= Math.PI * 2;
+    while (diff < -Math.PI) diff += Math.PI * 2;
+    a.face += diff * Math.min(1, dt * 8);
   }
+
+  // duduk saat bekerja
+  const sitTarget = a.working ? 1 : 0;
+  a.sit += (sitTarget - a.sit) * Math.min(1, dt * 6);
+
+  const r = a.rig;
+  const ph = a.t * 7 * SPEED;
+  const walkAmt = a.walking ? 1 : 0;
+  const s = a.sit;
+  r.root.position.set(a.x, 0, a.z);
+  r.root.rotation.y = a.face;
+  r.body.position.y = -0.3 * s + (a.walking ? Math.abs(Math.sin(ph)) * 0.04 : 0);
+  const swing = Math.sin(ph) * 0.7 * walkAmt;
+  r.legL.hip.rotation.x = -swing * (1 - s) - (Math.PI / 2) * s;
+  r.legR.hip.rotation.x = swing * (1 - s) - (Math.PI / 2) * s;
+  r.legL.knee.rotation.x = Math.max(0, Math.sin(ph + 1)) * 0.5 * walkAmt * (1 - s) + (Math.PI / 2) * s;
+  r.legR.knee.rotation.x = Math.max(0, -Math.sin(ph + 1)) * 0.5 * walkAmt * (1 - s) + (Math.PI / 2) * s;
+  const type = a.working ? Math.sin(a.t * 14) * 0.18 : 0;
+  r.armL.rotation.x = (swing * 0.9) * (1 - s) + (-1.05 + type) * s;
+  r.armR.rotation.x = (-swing * 0.9) * (1 - s) + (-1.05 - type) * s;
+  r.head.rotation.x = a.working ? 0.12 + Math.sin(a.t * 2) * 0.03 : Math.sin(a.t * 1.2) * 0.02;
 };
 
-// ---------- Gambar karakter ----------
-const INK = "#1b1b2f";
-const drawAgent = (c, a) => {
-  const x = Math.round(a.x);
-  const y = Math.round(a.y);
-  const f = a.walking ? Math.floor(a.t * 8) % 2 : 0;
-  const bob = a.working ? (Math.floor(a.t * 6) % 2) : 0;
-
-  R(c, x - 6, y - 1, 12, 3, "rgba(0,0,0,.28)");
-  // kaki
-  R(c, x - 4, y - 7 - (f ? 1 : 0), 4, 7 + (f ? 1 : 0), INK);
-  R(c, x, y - 7 - (f ? 0 : 1), 4, 7 + (f ? 0 : 1), INK);
-  R(c, x - 3, y - 6 - (f ? 1 : 0), 2, 5, "#3a4a6b");
-  R(c, x + 1, y - 6 - (f ? 0 : 1), 2, 5, "#3a4a6b");
-  // badan
-  R(c, x - 5, y - 15, 10, 10, INK);
-  R(c, x - 4, y - 14, 8, 8, a.shirt);
-  R(c, x - 1, y - 13, 3, 3, "#fff");
-  // lengan
-  if (a.working) {
-    R(c, x - 7, y - 13 + bob, 3, 5, INK);
-    R(c, x + 4, y - 13 + (1 - bob), 3, 5, INK);
-    R(c, x - 6, y - 12 + bob, 1, 3, a.shirt);
-    R(c, x + 5, y - 12 + (1 - bob), 1, 3, a.shirt);
-  } else {
-    const sw = a.walking ? (f ? 1 : -1) : 0;
-    R(c, x - 7, y - 14 + sw, 3, 7, INK);
-    R(c, x + 4, y - 14 - sw, 3, 7, INK);
-    R(c, x - 6, y - 13 + sw, 1, 5, a.shirt);
-    R(c, x + 5, y - 13 - sw, 1, 5, a.shirt);
-  }
-  // kepala
-  R(c, x - 5, y - 24, 10, 10, INK);
-  R(c, x - 4, y - 23, 8, 8, a.skin);
-  R(c, x - 4, y - 23, 8, 3, a.hair);
-  R(c, x - 5, y - 22, 1, 4, a.hair);
-  R(c, x + 4, y - 22, 1, 4, a.hair);
-  const ex = a.dir;
-  R(c, x - 2 + ex, y - 19, 1, 2, INK);
-  R(c, x + 1 + ex, y - 19, 1, 2, INK);
-  if (a.glasses) {
-    R(c, x - 3 + ex, y - 20, 3, 1, INK);
-    R(c, x + ex, y - 20, 3, 1, INK);
-  }
+// ---------- Kartu video (job) ----------
+const cardPalette = [0x2563eb, 0x7c3aed, 0x0891b2, 0xdb2777, 0xea580c, 0x16a34a];
+const hashColor = (s) => cardPalette[[...s].reduce((n, c) => n + c.charCodeAt(0), 0) % cardPalette.length];
+const makeCard = (color) => {
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(
+    new THREE.BoxGeometry(0.5, 0.82, 0.07),
+    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.25, roughness: 0.35 }),
+  );
+  body.castShadow = true;
+  g.add(body);
+  const tri = new THREE.Shape();
+  tri.moveTo(-0.07, -0.1);
+  tri.lineTo(-0.07, 0.1);
+  tri.lineTo(0.11, 0);
+  const play = new THREE.Mesh(new THREE.ShapeGeometry(tri), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+  play.position.z = 0.04;
+  g.add(play);
+  world.add(g);
+  return g;
 };
 
-// ---------- Kartu video yang berpindah ----------
-const card = { x: 227, y: 146, s: 0 };
-const drawCard = (c, t) => {
-  if (card.s < 0.05) return;
-  const w = Math.max(2, Math.round(9 * card.s));
-  const h = Math.max(3, Math.round(15 * card.s));
-  const x = Math.round(card.x - w / 2);
-  const y = Math.round(card.y - h - 6 + Math.sin(t * 3) * 1.5);
-  R(c, x - 1, y - 1, w + 2, h + 2, "#10224d");
-  R(c, x, y, w, h, "#2f6bff");
-  R(c, x, y, w, 2, "#6fa0ff");
-  if (card.s > 0.6) {
-    R(c, x + 3, y + 5, 1, 5, "#fff");
-    R(c, x + 4, y + 6, 1, 3, "#fff");
-    R(c, x + 5, y + 7, 1, 1, "#fff");
-  }
+const stageInfo = (stage) => {
+  const k = (stage || "").toLowerCase();
+  if (k.includes("antre claude")) return { st: 2, wait: true };
+  if (k.includes("antre render")) return { st: 3, wait: true };
+  if (k.includes("transkrip")) return { st: 1, wait: false };
+  if (k.includes("claude")) return { st: 2, wait: false };
+  if (k.includes("render")) return { st: 3, wait: false };
+  return { st: -1, wait: false };
 };
 
-const drawScreens = (c, t, active) => {
-  STATIONS.forEach((st, si) => {
-    st.screens.forEach(([x, y, w, h], k) => {
-      if (si === active) {
-        R(c, x, y, w, h, "#10343f");
-        const colors = ["#4fd1c5", "#ffd166", "#ef476f"];
-        for (let bx = 1; bx < w - 1; bx += 3) {
-          const hh = 2 + Math.floor((Math.sin(t * 6 + bx * 1.3 + k) + 1) * 0.5 * (h - 4));
-          R(c, x + bx, y + h - 1 - hh, 2, hh, colors[(bx / 3 + k) % 3 | 0]);
-        }
-      } else {
-        R(c, x, y, w, h, "#243a63");
-        R(c, x + 1, y + 2, w - 3, 1, "#3c5a94");
-        R(c, x + 1, y + 5, Math.max(2, w - 6), 1, "#3c5a94");
-      }
-    });
+const cards = new Map(); // id -> {g, tag, pos}
+const queueDocs = [];
+const resultCards = [];
+
+const tagFor = () => {
+  const el = document.createElement("div");
+  el.className = "jobtag";
+  bubbleLayer.appendChild(el);
+  return el;
+};
+
+const syncCards = (m) => {
+  const seen = new Set();
+  m.jobs.forEach((j, idx) => {
+    const info = stageInfo(j.stage);
+    if (info.st < 0) return;
+    seen.add(j.id);
+    let c = cards.get(j.id);
+    if (!c) {
+      const home = DESKS[1];
+      c = { g: makeCard(hashColor(j.id)), tag: tagFor(), pos: new THREE.Vector3(home.x - 2, 0.9, home.z + 2), rot: 0 };
+      c.g.position.copy(c.pos);
+      cards.set(j.id, c);
+    }
+    const d = DESKS[info.st];
+    c.target = info.wait
+      ? new THREE.Vector3(d.x - 0.85 - idx * 0.0, 0.84, d.z + 0.22)
+      : new THREE.Vector3(d.x, 1.95, d.z - 0.05);
+    c.flat = info.wait;
+    c.job = j;
   });
+  [...cards.keys()].forEach((id) => {
+    if (!seen.has(id)) {
+      const c = cards.get(id);
+      world.remove(c.g);
+      c.tag.remove();
+      cards.delete(id);
+    }
+  });
+
+  // antrean (belum masuk transkripsi): tumpukan berkas di meja Antrean
+  const want = Math.min(m.queue.length, 8);
+  while (queueDocs.length < want) {
+    const i = queueDocs.length;
+    const mesh = box(0.62, 0.05, 0.46, M(0xffffff), DESKS[0].x - 0.8, 0.82 + i * 0.055, DESKS[0].z + 0.15, world);
+    mesh.rotation.y = ((i * 37) % 11) * 0.04 - 0.2;
+    queueDocs.push(mesh);
+  }
+  while (queueDocs.length > want) {
+    const mesh = queueDocs.pop();
+    world.remove(mesh);
+  }
+  // hasil: kartu berdiri di rak meja Hasil
+  const wr = Math.min(m.clips, 12);
+  while (resultCards.length < wr) {
+    const i = resultCards.length;
+    const c = makeCard(cardPalette[i % cardPalette.length]);
+    c.scale.setScalar(0.55);
+    c.position.set(DESKS[4].x - 1.0 + (i % 6) * 0.38, 0.83 + 0.24, DESKS[4].z - 0.15 - Math.floor(i / 6) * 0.3);
+    resultCards.push(c);
+  }
+  while (resultCards.length > wr) world.remove(resultCards.pop());
 };
 
-// ---------- Label DOM ----------
-const labels = $("labels");
-const signEls = STATIONS.map((st) => {
-  const el = document.createElement("div");
-  el.className = "sign";
-  el.style.left = (st.sign[0] / W) * 100 + "%";
-  el.style.top = (st.sign[1] / H) * 100 + "%";
-  el.innerHTML = `<b>${st.name}</b><small>${st.sub}</small>`;
-  labels.appendChild(el);
-  return el;
-});
-[
-  ["LOUNGE", "istirahat", 56, 132],
-  ["BRIEF", "ide & catatan", 90, 8],
-].forEach(([n, s, x, y]) => {
-  const el = document.createElement("div");
-  el.className = "sign dim";
-  el.style.left = (x / W) * 100 + "%";
-  el.style.top = (y / H) * 100 + "%";
-  el.innerHTML = `<b>${n}</b><small>${s}</small>`;
-  labels.appendChild(el);
-});
-const tagEls = agents.map((a) => {
-  const el = document.createElement("div");
-  el.className = "tag";
-  el.innerHTML = `<i class="st"></i><b>${a.name}</b><small>${a.role}</small>`;
-  el.dataset.agent = a.i;
-  labels.appendChild(el);
-  return el;
-});
-
-// ---------- Model status dari server ----------
-let lastReal = window.__lastState || { queue: [], results: [], downloads: [], failed: [], status: null };
-let selected = null;
-let celebrateUntil = 0;
+// ---------- Status dari server + demo ----------
+let lastReal = window.__lastState || { jobs: [], queue: [], results: [], downloads: [], failed: [] };
 let demo = null;
-const logs = [];
-let prev = null;
+let celebrateUntil = 0;
+let prevStages = new Map();
+let primed = false;
 const now = () => performance.now();
-
-const clock = () => new Date().toLocaleTimeString("id-ID", { hour12: false });
-const log = (text) => {
-  logs.unshift({ t: clock(), text });
-  logs.length = Math.min(logs.length, 8);
-  lastSig = "";
-};
 
 const totals = (s) => ({
   clips: (s.results || []).reduce((n, r) => n + r.clips.length, 0),
   videos: (s.results || []).length,
 });
 
-let demoLogged = -1;
+const DEMO_NAMES = ["tips_menabung.mp4", "podcast_ep12.mp4", "vlog_bali.mp4"];
+const demoDur = { t: 6, c: 6, r: 8 };
+const demoPlan = (() => {
+  const plan = [];
+  let tEndPrev = 2;
+  let cEndPrev = 0;
+  let rEndPrev = 0;
+  DEMO_NAMES.forEach((name) => {
+    const tS = tEndPrev;
+    const tE = tS + demoDur.t;
+    const cS = Math.max(tE, cEndPrev);
+    const cE = cS + demoDur.c;
+    const rS = Math.max(cE, rEndPrev);
+    const rE = rS + demoDur.r;
+    plan.push({ name, tS, tE, cS, cE, rS, rE });
+    tEndPrev = tE;
+    cEndPrev = cE;
+    rEndPrev = rE;
+  });
+  return plan;
+})();
+const DEMO_END = demoPlan[demoPlan.length - 1].rE + 3;
+
 const demoState = () => {
-  const el = (now() - demo) / 1000;
-  const stageIdx = Math.floor(el / 6);
-  const pct = Math.round(((el % 6) / 6) * 100);
-  const base = { queue: [], results: lastReal.results || [], downloads: [], failed: [], status: null };
-  if (stageIdx === 0) base.downloads = [{ id: "demo", url: "https://youtu.be/demo-video", status: "mengunduh", progress: pct }];
-  else if (stageIdx === 1) base.status = { file: "demo_video.mp4", stage: "Transkripsi suara", detail: `${pct}%` };
-  else if (stageIdx === 2) base.status = { file: "demo_video.mp4", stage: "Claude memilih momen terbaik", detail: "Membaca transkrip" };
-  else if (stageIdx === 3) base.status = { file: "demo_video.mp4", stage: "Render klip", detail: `Klip ${1 + Math.floor(pct / 34)} dari 3: ${pct}%` };
-  else if (stageIdx === 4) {
-    celebrateUntil = Math.max(celebrateUntil, now() + 1000);
-  } else {
+  const t = (now() - demo) / 1000;
+  const s = { jobs: [], queue: [], results: lastReal.results || [], downloads: [], failed: [] };
+  demoPlan.forEach((p) => {
+    const id = p.name.replace(/\.mp4$/, "");
+    const pct = (a, b) => Math.min(99, Math.round(((t - a) / (b - a)) * 100));
+    if (t < p.tS) s.queue.push({ name: p.name });
+    else if (t < p.tE) s.jobs.push({ id, file: p.name, stage: "Transkripsi suara", detail: `${pct(p.tS, p.tE)}%` });
+    else if (t < p.cS) s.jobs.push({ id, file: p.name, stage: "Antre Claude", detail: "" });
+    else if (t < p.cE) s.jobs.push({ id, file: p.name, stage: "Claude memilih momen terbaik", detail: "" });
+    else if (t < p.rS) s.jobs.push({ id, file: p.name, stage: "Antre render", detail: "" });
+    else if (t < p.rE) s.jobs.push({ id, file: p.name, stage: "Render klip", detail: `Klip ${1 + Math.floor(pct(p.rS, p.rE) / 34)} dari 3: ${pct(p.rS, p.rE)}%` });
+    else if (t - p.rE < 0.1) celebrateUntil = now() + 5000;
+  });
+  if (t > DEMO_END) {
     demo = null;
-    log("DEMO selesai");
+    setDemoButton();
   }
-  if (stageIdx !== demoLogged && stageIdx <= 4) {
-    demoLogged = stageIdx;
-    log(`DEMO: ${["Mengunduh video", "Transkripsi suara", "Claude memilih momen", "Render klip", "Klip selesai"][stageIdx]}`);
-  }
-  return base;
+  return s;
 };
 
-const model = (s) => {
-  const t = now();
+const buildModel = (s) => {
+  const jobs = (s.jobs || []).filter((j) => stageInfo(j.stage).st >= 0);
   const downloading = (s.downloads || []).find((d) => d.status === "mengunduh");
-  let active = -1;
-  let stage = "";
-  let detail = "";
-  let file = "";
-  if (s.status) {
-    stage = s.status.stage || "";
-    file = s.status.file || "";
-    detail = s.status.detail || "";
-    const k = stage.toLowerCase();
-    active = k.includes("transkrip") ? 1 : k.includes("claude") ? 2 : k.includes("render") ? 3 : -1;
-  } else if (downloading) {
-    active = 0;
-    stage = "Mengunduh video";
-    file = downloading.url;
-    detail = `${Math.round(downloading.progress)}%`;
-  }
-  if (active < 0 && celebrateUntil > t) {
-    active = 4;
-    stage = "Klip selesai";
-    detail = "Hasil siap diunduh";
-  }
-  const queue = (s.queue || []).filter((q) => !s.status || q.name !== s.status.file).map((q) => q.name);
-  return { active, stage, detail, file, queue, ...totals(s) };
-};
-
-const detect = (s) => {
-  const cur = {
-    stage: s.status ? `${s.status.stage}|${s.status.file}` : "",
+  const active = new Set();
+  jobs.forEach((j) => {
+    const i = stageInfo(j.stage);
+    if (!i.wait) active.add(i.st);
+  });
+  if (downloading || (s.queue || []).length > 0) active.add(0);
+  if (celebrateUntil > now()) active.add(4);
+  return {
+    jobs,
     queue: (s.queue || []).map((q) => q.name),
-    dl: Object.fromEntries((s.downloads || []).map((d) => [d.id, d.status])),
-    clips: totals(s).clips,
-    failed: (s.failed || []).length,
+    downloading,
+    active,
+    ...totals(s),
   };
-  if (prev) {
-    if (cur.stage && cur.stage !== prev.stage) log(`${s.status.stage}: ${short(s.status.file, 26)}`);
-    cur.queue.filter((n) => !prev.queue.includes(n)).forEach((n) => log(`Masuk antrean: ${short(n, 26)}`));
-    Object.entries(cur.dl).forEach(([id, st]) => {
-      if (prev.dl[id] !== st) log(`Unduhan ${st}`);
-    });
-    if (cur.clips > prev.clips) {
-      log(`Hasil baru: ${cur.clips - prev.clips} klip`);
-      celebrateUntil = now() + 14000;
-    }
-    if (cur.failed > prev.failed) log("Ada video yang gagal diproses");
-  }
-  prev = cur;
 };
 
+// deteksi perpindahan job antar tahap -> kurir mengantar
+const detectMoves = (m) => {
+  const cur = new Map(m.jobs.map((j) => [j.id, j]));
+  if (primed) {
+    cur.forEach((j, id) => {
+      const next = stageInfo(j.stage).st;
+      const prevJ = prevStages.get(id);
+      if (!prevJ) {
+        if (next === 1) requestErrand(0, 1, j.file);
+      } else {
+        const before = stageInfo(prevJ.stage).st;
+        if (before >= 0 && next !== before) requestErrand(before, next, j.file);
+      }
+    });
+    prevStages.forEach((j, id) => {
+      if (!cur.has(id) && stageInfo(j.stage).st === 3) {
+        requestErrand(3, 4, j.file);
+        celebrateUntil = Math.max(celebrateUntil, now() + 6000);
+      }
+    });
+  }
+  prevStages = cur;
+  primed = true;
+};
+
+let lastClips = null;
 window.updateStudio = (s) => {
   lastReal = s;
-  detect(s);
+  const c = totals(s).clips;
+  if (lastClips !== null && c > lastClips) celebrateUntil = Math.max(celebrateUntil, now() + 10000);
+  lastClips = c;
 };
 window.studioOnline = (ok) => {
   const chip = $("chipLive");
   if (chip) {
     chip.classList.toggle("off", !ok);
-    chip.lastChild.textContent = ok ? " LIVE / TERHUBUNG" : " TERPUTUS";
+    chip.lastChild.textContent = ok ? " LIVE" : " TERPUTUS";
   }
 };
 
-// ---------- Panel samping ----------
-let lastSig = "";
-const AGENT_STATE = (a) => (a.working ? "Bekerja" : a.walking ? "Berjalan" : "Santai");
-const renderPanels = (m) => {
-  const aIdx = selected !== null ? selected : m.active >= 0 ? m.active : 5;
-  const a = agents[aIdx];
-  const where = a.station >= 0 ? STATIONS[a.station].name : "LOUNGE";
-  const task =
-    m.active >= 0 && a.station === m.active
-      ? `${m.stage}${m.detail ? " — " + m.detail : ""}`
-      : "Menunggu tugas";
-  const sig = JSON.stringify([m, aIdx, AGENT_STATE(a), logs, !!demo]);
-  if (sig === lastSig) return;
-  lastSig = sig;
+// ---------- Balon ucapan ----------
+const bubbleEls = agents.map((a) => {
+  const el = document.createElement("div");
+  el.className = "bubble";
+  el.innerHTML = `<i></i><b>${a.name}</b><span></span>`;
+  bubbleLayer.appendChild(el);
+  return el;
+});
 
-  $("chipQueue").textContent = `ANTREAN ${m.queue.length}`;
-  $("runBody").innerHTML =
-    m.active >= 0
-      ? `<div class="kv"><span class="dot on"></span> ${esc(m.stage.toUpperCase())}</div>
-         <div class="big">${esc(short(m.file || "-", 40))}</div>
-         <div class="mut">${esc(m.detail || "")}</div>
-         ${m.queue.length ? `<div class="mut" style="margin-top:6px">Antrean: ${m.queue.map((n) => esc(short(n, 22))).join(", ")}</div>` : ""}`
-      : `<div class="kv"><span class="dot"></span> TASK STANDBY</div>
-         <div class="big">Menunggu video</div>
-         <div class="mut">${m.queue.length ? `${m.queue.length} video di antrean` : "Seret video atau tempel link di bawah"}</div>`;
-
-  $("agentBody").innerHTML = `
-    <div class="agentHead"><span class="av" style="background:${a.shirt}">${a.name.slice(0, 2).toUpperCase()}</span>
-      <div><b>${a.name}</b><div class="mut">${a.role}</div></div></div>
-    <div class="two"><div class="box"><small>STATUS</small>${AGENT_STATE(a)}</div><div class="box"><small>STATION</small>${where}</div></div>
-    <div class="box"><small>CURRENT TASK</small>${esc(short(task, 44))}</div>
-    <div class="picker">${agents.map((g) => `<button data-pick="${g.i}" class="${g.i === aIdx ? "on" : ""}"><i style="background:${g.shirt}"></i>${g.name}</button>`).join("")}</div>`;
-
-  $("logBody").innerHTML = logs.length
-    ? logs.map((l) => `<div class="log"><time>${l.t}</time>${esc(l.text)}</div>`).join("")
-    : `<div class="mut">Belum ada aktivitas. Coba tombol demo di bawah.</div>`;
-
-  $("btnDemo").textContent = demo ? "■ Hentikan demo" : "▶ Putar demo tim AI";
+const workText = (a, m) => {
+  const j = (stg) => m.jobs.find((x) => stageInfo(x.stage).st === stg && !stageInfo(x.stage).wait);
+  switch (a.station) {
+    case 0:
+      return m.downloading ? `Mengunduh link · ${Math.round(m.downloading.progress)}%` : `Mengatur antrean · ${m.queue.length} video`;
+    case 1: {
+      const x = j(1);
+      return x ? `Transkripsi ${clean(x.file)}${x.detail ? " · " + x.detail : ""}` : "Transkripsi";
+    }
+    case 2: {
+      const x = j(2);
+      return x ? `Memilih momen · ${clean(x.file)}` : "Memilih momen";
+    }
+    case 3: {
+      const x = j(3);
+      return x ? `Render ${clean(x.file)}${x.detail ? " · " + x.detail : ""}` : "Render";
+    }
+    default:
+      return "Klip selesai, siap diunduh";
+  }
 };
 
-$("agentBody").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-pick]");
-  if (!b) return;
-  selected = Number(b.dataset.pick);
-  lastSig = "";
-});
-tagEls.forEach((el) =>
-  el.addEventListener("click", () => {
-    selected = Number(el.dataset.agent);
-    lastSig = "";
-  }),
-);
+const tmpV = new THREE.Vector3();
+const project = (x, y, z, w, h) => {
+  tmpV.set(x, y, z).project(camera);
+  return [(tmpV.x * 0.5 + 0.5) * w, (-tmpV.y * 0.5 + 0.5) * h, tmpV.z];
+};
+
+// ---------- Panel alur job ----------
+let flowSig = "";
+const renderFlow = (m) => {
+  const stepOf = (stage) => {
+    const k = (stage || "").toLowerCase();
+    if (k.includes("antre claude")) return { done: 1, run: -1, wait: 1 };
+    if (k.includes("antre render")) return { done: 2, run: -1, wait: 2 };
+    if (k.includes("transkrip")) return { done: 0, run: 0, wait: -1 };
+    if (k.includes("claude")) return { done: 1, run: 1, wait: -1 };
+    if (k.includes("render")) return { done: 2, run: 2, wait: -1 };
+    return { done: 0, run: -1, wait: -1 };
+  };
+  const labels = ["Transkripsi", "Claude", "Render"];
+  const rows = [];
+  m.jobs.forEach((j) => {
+    const st = stepOf(j.stage);
+    rows.push(`<div class="job"><div class="jn"><b>${esc(clean(j.file))}</b><small>${esc(j.detail || j.stage)}</small></div>
+      <div class="steps">${labels
+        .map((l, i) => `<span class="c ${i < st.done ? "done" : i === st.run ? "run" : i === st.wait ? "wait" : ""}">${l}</span>`)
+        .join("")}</div></div>`);
+  });
+  m.queue.forEach((n) =>
+    rows.push(`<div class="job"><div class="jn"><b>${esc(clean(n))}</b><small>Menunggu giliran transkripsi</small></div>
+      <div class="steps"><span class="c wait">Antre</span></div></div>`),
+  );
+  const sig = JSON.stringify([rows, m.clips]);
+  if (sig === flowSig) return;
+  flowSig = sig;
+  $("flow").innerHTML = rows.length
+    ? rows.join("")
+    : `<div class="empty">Tidak ada video diproses. Seret video atau tempel link di bawah, atau tekan tombol demo.</div>`;
+  $("flowCount").textContent = `${m.jobs.length} berjalan · ${m.queue.length} antre · ${m.clips} klip jadi`;
+};
+
+// ---------- Demo ----------
+const setDemoButton = () => {
+  $("btnDemo").textContent = demo ? "■ Hentikan demo" : "▶ Putar demo 3 video";
+};
 $("btnDemo").addEventListener("click", () => {
-  if (demo) {
-    demo = null;
-    celebrateUntil = 0;
-    log("DEMO dihentikan");
-  } else {
-    demo = now();
-    demoLogged = -1;
-    log("DEMO dimulai");
-  }
-  lastSig = "";
-});
-$("btnReset").addEventListener("click", () => {
-  demo = null;
-  selected = null;
+  demo = demo ? null : now();
+  prevStages = new Map();
+  primed = false;
   celebrateUntil = 0;
-  logs.length = 0;
-  lastSig = "";
+  errands.length = 0;
+  setDemoButton();
 });
+
+// ---------- Ukuran ----------
+const fit = () => {
+  const w = host.clientWidth;
+  const h = host.clientHeight;
+  if (!w || !h) return;
+  renderer.setSize(w, h);
+  const aspect = w / h;
+  let hw = aspect < 1.2 ? 10.8 : 13.6; // layar sempit: bingkai lebih rapat
+  let hh = hw / aspect;
+  if (hh < 8.6) {
+    hh = 8.6;
+    hw = hh * aspect;
+  }
+  Object.assign(camera, { left: -hw, right: hw, top: hh, bottom: -hh });
+  camera.updateProjectionMatrix();
+};
+new ResizeObserver(fit).observe(host);
+fit();
 
 // ---------- Loop ----------
 let last = performance.now();
-let curModel = model(lastReal);
-let panelTimer = 0;
-
-const frame = () => {
+let model = buildModel(lastReal);
+renderer.setAnimationLoop(() => {
   const t = performance.now();
   const dt = Math.min(0.1, (t - last) / 1000);
   last = t;
-
-  const s = demo ? demoState() : lastReal;
-  curModel = model(s);
-
-  agents.forEach((a) => stepAgent(a, dt, curModel.active));
-
-  // kartu video bergerak ke stasiun aktif
-  if (curModel.active >= 0) {
-    const tgt = STATIONS[curModel.active].card;
-    card.x += (tgt.x - card.x) * Math.min(1, dt * 4);
-    card.y += (tgt.y - card.y) * Math.min(1, dt * 4);
-    card.s += (1 - card.s) * Math.min(1, dt * 6);
-  } else {
-    card.s += (0 - card.s) * Math.min(1, dt * 6);
-  }
-
   const sec = t / 1000;
-  ctx.clearRect(0, 0, W, H);
-  ctx.drawImage(bgC, 0, 0);
-  drawScreens(ctx, sec, curModel.active);
-  [...agents].sort((p, q) => p.y - q.y).forEach((a) => drawAgent(ctx, a));
-  ctx.drawImage(fgC, 0, 0);
-  drawCard(ctx, sec);
 
-  // label DOM
-  agents.forEach((a, i) => {
-    const el = tagEls[i];
-    el.style.left = (a.x / W) * 100 + "%";
-    el.style.top = ((a.y - 27) / H) * 100 + "%";
-    el.classList.toggle("sel", (selected !== null ? selected : curModel.active >= 0 ? curModel.active : 5) === i);
-    el.classList.toggle("work", a.working);
+  model = buildModel(demo ? demoState() : lastReal);
+  detectMoves(model);
+
+  agents.forEach((a) => stepAgent(a, dt, model.active));
+  syncCards(model);
+
+  // layar menyala di stasiun aktif
+  screenMats.forEach((arr, si) => {
+    const on = model.active.has(si);
+    arr.forEach((mat, k) => {
+      const target = on ? 0.75 + 0.25 * Math.sin(sec * 6 + k * 1.7) : 0.05;
+      mat.emissiveIntensity += (target - mat.emissiveIntensity) * 0.15;
+    });
   });
-  signEls.forEach((el, i) => el.classList.toggle("on", i === curModel.active));
 
-  panelTimer += dt;
-  if (panelTimer > 0.25) {
-    panelTimer = 0;
-    renderPanels(curModel);
-  }
-  requestAnimationFrame(frame);
-};
+  // animasi kartu
+  cards.forEach((c) => {
+    c.pos.lerp(c.target, Math.min(1, dt * 4));
+    const bob = c.flat ? 0 : Math.sin(sec * 3 + c.pos.x) * 0.06;
+    c.g.position.set(c.pos.x, c.pos.y + bob, c.pos.z);
+    c.g.rotation.x = c.flat ? -Math.PI / 2 : 0;
+    c.g.rotation.y = c.flat ? 0.3 : Math.PI * 0.25;
+    c.g.scale.setScalar(c.flat ? 0.75 : 1);
+  });
+  resultCards.forEach((c) => (c.rotation.y = Math.PI * 0.25));
+
+  controls.update();
+  renderer.render(scene, camera);
+
+  // overlay DOM
+  const w = host.clientWidth;
+  const h = host.clientHeight;
+  camera.updateMatrixWorld();
+  agents.forEach((a, i) => {
+    const el = bubbleEls[i];
+    const [sx, sy] = project(a.x, 2.15 - a.sit * 0.3, a.z, w, h);
+    el.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`;
+    let text = "";
+    if (a.say && t < a.sayUntil) text = a.say;
+    else if (a.working) text = workText(a, model);
+    const show = text !== "";
+    el.classList.toggle("on", show);
+    el.classList.toggle("mini", !show);
+    el.lastChild.textContent = text;
+    el.classList.toggle("busy", a.working || (a.say && t < a.sayUntil));
+  });
+  cards.forEach((c) => {
+    if (c.flat || !c.job) {
+      c.tag.style.display = "none";
+      return;
+    }
+    const [sx, sy] = project(c.pos.x, c.pos.y + 0.7, c.pos.z, w, h);
+    c.tag.style.display = "";
+    c.tag.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`;
+    c.tag.textContent = clean(c.job.file);
+  });
+
+  renderFlow(model);
+});
 
 setInterval(() => {
   const el = $("clock");
-  if (el) el.textContent = new Date().toLocaleString("id-ID", { hour12: false });
+  if (el) el.textContent = new Date().toLocaleTimeString("id-ID", { hour12: false });
 }, 1000);
-$("clock").textContent = new Date().toLocaleString("id-ID", { hour12: false });
-
+$("notice")?.remove();
 if (window.__lastState) window.updateStudio(window.__lastState);
-renderPanels(curModel);
-requestAnimationFrame(frame);
-})();
+setDemoButton();

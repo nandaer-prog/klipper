@@ -5,9 +5,9 @@ import { execFileSync } from "node:child_process";
 import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { ClipProps } from "../src/types";
-import { LAYOUT, OUTPUT, ROOT } from "./config";
+import { LAYOUT, OUTPUT, RENDER_CONCURRENCY, ROOT } from "./config";
 import type { ClipPlan } from "./pick-clips";
-import { setStatus } from "./status";
+import { setJob } from "./status";
 
 export const renderClips = async (
   id: string,
@@ -92,12 +92,13 @@ export const renderClips = async (
       codec: "h264",
       outputLocation,
       inputProps: props,
+      concurrency: RENDER_CONCURRENCY,
       onProgress: ({ progress }) => {
         const pct = Math.round(progress * 100);
         process.stdout.write(`\rRender klip ${n}: ${pct}%`);
         if (pct !== lastPct) {
           lastPct = pct;
-          void setStatus({
+          void setJob(id, {
             stage: "Render klip",
             detail: `Klip ${index + 1} dari ${items.length}: ${pct}%`,
           });

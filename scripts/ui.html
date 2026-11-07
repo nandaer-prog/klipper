@@ -3,175 +3,157 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Klipper AI Agency</title>
+<title>Virtual Office AI Agent</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
 <style>
   :root {
-    --navy:#1f2a4d; --paper:#f7f3e6; --panel:#f3f7fb; --head:#dce9f5; --red:#e8452c; --yellow:#ffc933;
-    --line:#1f2a4d; --muted:#5d6b8a; --ok:#1f9d63; --bad:#d6342a; --accent:#2f5bd3;
-    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --bg1:#eef5fc; --bg2:#ffffff; --ink:#16233f; --muted:#64748b; --line:#dbe4f0; --card:#ffffff;
+    --blue:#2563eb; --blue2:#1741b8; --yellow:#ffd23f; --ok:#16a34a; --bad:#dc2626;
+    --font: "Trebuchet MS", "Segoe UI", system-ui, sans-serif;
   }
-  * { box-sizing: border-box; }
-  body {
-    margin:0; color:var(--navy); font:14px/1.45 var(--mono);
-    background:#eaf1f8;
-    background-image: repeating-linear-gradient(45deg, rgba(31,42,77,.035) 0 2px, transparent 2px 14px);
-  }
-  main { max-width:1280px; margin:0 auto; padding:12px 12px 64px; }
+  * { box-sizing:border-box; }
+  body { margin:0; color:var(--ink); font:15px/1.5 var(--font); background:linear-gradient(180deg,var(--bg1),var(--bg2) 520px); min-height:100vh; }
+  main { max-width:1180px; margin:0 auto; padding:18px 14px 72px; }
 
-  .panel { background:var(--panel); border:3px solid var(--line); box-shadow:0 0 0 2px #fff inset, 4px 4px 0 rgba(31,42,77,.18); }
-  .panelHead { display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--head); border-bottom:3px solid var(--line); padding:6px 10px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
-  .panelHead em { font-style:normal; font-weight:400; color:var(--muted); letter-spacing:0; text-transform:none; }
-  .panelBody { padding:10px; }
-  .dots { display:inline-flex; gap:4px; margin-right:6px; }
-  .dots i { width:9px; height:9px; border:2px solid var(--line); display:inline-block; }
-  .dots i:nth-child(1){background:var(--red)} .dots i:nth-child(2){background:var(--yellow)} .dots i:nth-child(3){background:#4fb36b}
+  .hero { text-align:center; margin:6px 0 10px; }
+  .t1 { display:block; font-size:clamp(34px,6.4vw,64px); font-weight:900; line-height:1.05; color:#fff; letter-spacing:-.01em;
+        -webkit-text-stroke:9px var(--blue2); paint-order:stroke fill; text-shadow:0 6px 0 var(--blue2), 0 10px 16px rgba(23,65,184,.25); }
+  .t2 { display:inline-block; margin-top:10px; padding:2px 26px 8px; border-radius:26px; border:4px solid #fff;
+        background:linear-gradient(180deg,#2d74ff,#1741b8); box-shadow:0 0 0 4px #1b3f9e, 0 12px 20px rgba(23,65,184,.3);
+        font-size:clamp(32px,6vw,60px); font-weight:900; color:#fff; line-height:1.15; letter-spacing:.01em;
+        -webkit-text-stroke:6px #12307f; paint-order:stroke fill; }
+  .t2 b { color:var(--yellow); }
+  .sub { color:var(--muted); margin:10px 0 0; }
 
-  .topbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; background:var(--paper); border:3px solid var(--line); box-shadow:0 0 0 2px #fff inset; padding:10px 14px; margin-bottom:12px; }
-  .brand { display:flex; align-items:center; gap:12px; }
-  .logo { width:38px; height:38px; display:grid; grid-template-columns:1fr 1fr; border:3px solid var(--line); }
-  .logo i:nth-child(1){background:var(--red)} .logo i:nth-child(2){background:var(--navy)} .logo i:nth-child(3){background:#f2a33a} .logo i:nth-child(4){background:var(--accent)}
-  .brand small { display:block; color:var(--red); font-size:10px; font-weight:700; letter-spacing:.12em; }
-  .brand h1 { margin:0; font-size:22px; line-height:1.1; letter-spacing:.02em; }
-  .chips { display:flex; gap:8px; flex-wrap:wrap; }
-  .chip { border:2px solid var(--line); background:#f1f7fc; padding:4px 10px; font-size:11px; font-weight:700; }
-  .chip.live i { display:inline-block; width:9px; height:9px; background:var(--ok); border:2px solid var(--line); margin-right:4px; }
-  .chip.off i { background:var(--bad); }
+  .stage { position:relative; margin-top:14px; border-radius:22px; background:linear-gradient(180deg,#f7fbff,#eaf2fb); border:1px solid var(--line); box-shadow:0 14px 34px rgba(31,64,128,.12); overflow:hidden; }
+  #office { position:relative; width:100%; aspect-ratio:16/10; cursor:grab; }
+  #office:active { cursor:grabbing; }
+  #office canvas { position:absolute; inset:0; width:100% !important; height:100% !important; display:block; }
+  #bubbles { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+  #notice { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); text-align:center; padding:20px; }
+  .stageBar { position:absolute; left:12px; right:12px; top:10px; display:flex; justify-content:space-between; align-items:center; pointer-events:none; gap:8px; }
+  .pillBar { background:rgba(255,255,255,.88); border:1px solid var(--line); border-radius:99px; padding:4px 12px; font-size:12px; font-weight:700; box-shadow:0 2px 6px rgba(31,64,128,.08); pointer-events:auto; }
+  .pillBar.live i { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:5px; }
+  .pillBar.off i { background:var(--bad); }
+  .stageHint { position:absolute; left:12px; bottom:10px; font-size:11px; color:var(--muted); background:rgba(255,255,255,.8); border-radius:99px; padding:2px 10px; }
 
-  .studio { display:grid; grid-template-columns:minmax(0,1fr) 310px; gap:12px; align-items:start; }
-  .floorWrap { position:relative; background:#c98f4e; line-height:0; border-top:0; }
-  #floor { display:block; width:100%; height:auto; aspect-ratio:16/9; image-rendering:pixelated; image-rendering:crisp-edges; image-rendering:pixelated; }
-  #labels { position:absolute; inset:0; pointer-events:none; line-height:1.2; overflow:hidden; }
-  .sign, .tag { position:absolute; transform:translate(-50%,-100%); white-space:nowrap; text-align:center; }
-  .sign { background:rgba(255,252,240,.96); border:2px solid var(--line); padding:1px 6px; font-size:clamp(7px,1vw,11px); }
-  .sign b { display:block; letter-spacing:.06em; }
-  .sign small { display:block; font-size:.8em; color:var(--muted); }
-  .sign.on { background:var(--yellow); }
-  .sign.dim { opacity:.8; }
-  .tag { pointer-events:auto; cursor:pointer; background:#fff; border:2px solid var(--line); padding:0 5px; font-size:clamp(7px,.95vw,10px); transition:left .1s linear, top .1s linear; }
-  .tag b { display:block; }
-  .tag small { display:block; font-size:.78em; color:var(--muted); }
-  .tag .st { display:none; position:absolute; left:50%; top:-9px; width:6px; height:6px; margin-left:-3px; background:var(--yellow); border:1px solid var(--line); }
-  .tag.work .st { display:block; }
-  .tag.sel { outline:2px dashed var(--accent); outline-offset:2px; }
+  .bubble, .jobtag { position:absolute; left:0; top:0; will-change:transform; white-space:nowrap; }
+  .bubble { background:#fff; border-radius:12px; padding:5px 10px 6px; box-shadow:0 6px 16px rgba(20,40,90,.22); font-size:clamp(10px,1.2vw,13px); line-height:1.25; max-width:230px; }
+  .bubble::after { content:""; position:absolute; left:50%; bottom:-5px; width:10px; height:10px; background:#fff; transform:translateX(-50%) rotate(45deg); }
+  .bubble i { display:inline-block; width:8px; height:8px; border-radius:50%; background:#9fb0c8; margin-right:6px; }
+  .bubble.busy i { background:var(--ok); }
+  .bubble b { font-weight:800; }
+  .bubble span { display:block; color:#475569; font-size:.92em; overflow:hidden; text-overflow:ellipsis; }
+  .bubble.mini { padding:2px 8px; border-radius:99px; box-shadow:0 2px 6px rgba(20,40,90,.16); font-size:clamp(9px,1vw,11px); opacity:.92; }
+  .bubble.mini::after, .bubble.mini span { display:none; }
+  .jobtag { background:var(--blue); color:#fff; border-radius:99px; padding:1px 8px; font-size:clamp(9px,1vw,11px); font-weight:700; box-shadow:0 2px 6px rgba(20,40,90,.25); }
 
-  .side > .panel + .panel { margin-top:12px; }
-  .kv { font-size:11px; font-weight:700; letter-spacing:.05em; color:var(--muted); }
-  .dot { display:inline-block; width:8px; height:8px; border:2px solid var(--line); background:#9fb0c8; margin-right:4px; }
-  .dot.on { background:#4fb36b; }
-  .big { font-size:15px; font-weight:700; margin-top:4px; word-break:break-word; }
-  .mut { color:var(--muted); font-size:11px; }
-  .agentHead { display:flex; gap:10px; align-items:center; margin-bottom:8px; }
-  .agentHead b { font-size:16px; }
-  .av { width:38px; height:38px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; border:3px solid var(--line); }
-  .two { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
-  .box { border:2px solid #b9c7da; background:#fff; padding:4px 8px; margin-bottom:6px; font-size:12px; font-weight:700; }
-  .box small { display:block; font-size:9px; color:var(--muted); letter-spacing:.08em; }
-  .picker { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
-  .picker button { font:inherit; font-size:10px; border:2px solid #b9c7da; background:#fff; padding:3px 4px; cursor:pointer; text-align:left; color:var(--navy); }
-  .picker button.on { border-color:var(--navy); background:#e6f4ee; }
-  .picker i { display:inline-block; width:7px; height:7px; margin-right:4px; border:1px solid var(--navy); }
-  .log { font-size:11px; border-bottom:1px dashed #c3cfe0; padding:3px 0; word-break:break-word; }
-  .log time { color:var(--muted); margin-right:6px; }
-  .ctl button { width:100%; font:inherit; font-weight:700; font-size:12px; padding:8px; border:3px solid var(--line); cursor:pointer; color:var(--navy); }
-  .ctl button + button { margin-top:8px; }
-  #btnDemo { background:var(--yellow); }
-  #btnReset { background:#fff; }
-  .ctl button:hover { filter:brightness(1.05); }
+  .ctrl { display:flex; flex-wrap:wrap; gap:10px; align-items:center; justify-content:space-between; margin-top:12px; }
+  button.big { font:800 14px var(--font); background:var(--yellow); color:var(--ink); border:0; border-radius:12px; padding:10px 16px; cursor:pointer; box-shadow:0 4px 0 #d9ae1d; }
+  button.big:active { transform:translateY(2px); box-shadow:0 2px 0 #d9ae1d; }
+  .muted { color:var(--muted); font-size:13px; }
 
-  .sec { margin-top:22px; }
-  .sec > h2 { margin:0 0 8px; font-size:12px; letter-spacing:.1em; text-transform:uppercase; }
-  .card { background:var(--panel); border:3px solid var(--line); box-shadow:0 0 0 2px #fff inset; padding:12px; }
-  #drop { border:3px dashed #8da2c4; padding:30px 16px; text-align:center; cursor:pointer; background:rgba(255,255,255,.65); transition:.12s; }
-  #drop.over { border-color:var(--accent); background:#e8f0ff; }
-  #drop strong { display:block; font-size:16px; margin-bottom:4px; }
-  #drop span { color:var(--muted); font-size:12px; }
-  .row { display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; }
-  .muted { color:var(--muted); font-size:12px; }
-  .bar { height:10px; background:#dfe7f2; border:2px solid var(--line); margin-top:8px; }
-  .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
-  .list > * + * { margin-top:10px; }
-  .clips { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; margin-top:12px; }
-  .clip video { width:100%; aspect-ratio:9/16; background:#000; border:3px solid var(--line); }
-  .clip .row { margin-top:6px; }
-  a.btn, button.btn { background:var(--accent); color:#fff; border:2px solid var(--line); padding:6px 12px; font:700 12px var(--mono); text-decoration:none; cursor:pointer; }
-  a.btn:hover, button.btn:hover { filter:brightness(1.1); }
-  button.ghost { background:#fff; color:var(--bad); }
-  .pill { display:inline-block; padding:1px 8px; border:2px solid var(--line); font-size:11px; background:#eef3fa; }
-  .pill.run { background:#dbe7ff; }
-  .err { color:var(--bad); font-size:12px; white-space:pre-wrap; word-break:break-word; }
+  h2 { font-size:13px; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); margin:30px 0 10px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px; padding:14px; box-shadow:0 2px 8px rgba(31,64,128,.05); }
+  .flow .job { display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; padding:8px 0; }
+  .flow .job + .job { border-top:1px dashed var(--line); }
+  .jn b { display:block; } .jn small { color:var(--muted); }
+  .steps { display:flex; gap:6px; }
+  .c { font-size:12px; font-weight:700; padding:3px 10px; border-radius:99px; background:#eef2f8; color:#94a3b8; }
+  .c.done { background:#dcfce7; color:#15803d; }
+  .c.run { background:#dbeafe; color:#1d4ed8; box-shadow:0 0 0 2px #93c5fd; }
+  .c.wait { background:#fef3c7; color:#b45309; }
   .empty { color:var(--muted); padding:6px 0; }
-  textarea { width:100%; background:#fff; color:var(--navy); border:3px solid var(--line); padding:10px; font:13px var(--mono); resize:vertical; }
-  textarea:focus { outline:3px solid #bcd0ff; }
-  .dl { border-top:2px dashed #b9c7da; padding-top:10px; }
+
+  #drop { border:2px dashed #9db4d6; border-radius:16px; padding:30px 16px; text-align:center; cursor:pointer; background:rgba(255,255,255,.7); transition:.15s; }
+  #drop.over { border-color:var(--blue); background:#eaf2ff; }
+  #drop strong { display:block; font-size:17px; margin-bottom:4px; }
+  #drop span { color:var(--muted); font-size:13px; }
+  .row { display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; }
+  .bar { height:8px; background:#e5ecf6; border-radius:99px; overflow:hidden; margin-top:8px; }
+  .bar > i { display:block; height:100%; width:0; background:var(--blue); transition:width .2s; }
+  .list > * + * { margin-top:10px; }
+  .clips { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:14px; margin-top:12px; }
+  .clip video { width:100%; aspect-ratio:9/16; background:#000; border-radius:12px; }
+  .clip .row { margin-top:6px; }
+  a.btn, button.btn { background:var(--blue); color:#fff; border:0; border-radius:10px; padding:7px 13px; font:700 13px var(--font); text-decoration:none; cursor:pointer; }
+  a.btn:hover, button.btn:hover { filter:brightness(1.08); }
+  button.ghost { background:#fff; color:var(--bad); border:1px solid var(--line); }
+  .pill { display:inline-block; padding:2px 10px; border-radius:99px; font-size:12px; background:#eef2f8; color:var(--muted); }
+  .pill.run { background:#dbeafe; color:#1d4ed8; }
+  .err { color:var(--bad); font-size:13px; white-space:pre-wrap; word-break:break-word; }
+  textarea { width:100%; background:#fff; color:var(--ink); border:1px solid var(--line); border-radius:12px; padding:10px; font:inherit; resize:vertical; }
+  textarea:focus { outline:2px solid #bcd0ff; border-color:var(--blue); }
+  .dl { border-top:1px solid var(--line); padding-top:10px; }
   .dl .u { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60%; }
 
-  @media (max-width: 960px) { .studio { grid-template-columns:1fr; } }
+  @media (max-width:640px) {
+    #office { aspect-ratio:1/1; }
+    .bubble.mini { display:none; }
+    .bubble { max-width:150px; font-size:10px; padding:3px 8px 4px; }
+    .bubble span { white-space:normal; }
+    .stageHint { display:none; }
+  }
 </style>
 </head>
 <body>
 <main>
-  <header class="topbar">
-    <div class="brand">
-      <div class="logo"><i></i><i></i><i></i><i></i></div>
-      <div><small>AI CREATIVE STUDIO / LIVE VIEW</small><h1>KLIPPER AI AGENCY</h1></div>
-    </div>
-    <div class="chips">
-      <span class="chip" id="chipQueue">ANTREAN 0</span>
-      <span class="chip live" id="chipLive"><i></i> LIVE / TERHUBUNG</span>
-    </div>
+  <header class="hero">
+    <span class="t1">Virtual Office</span>
+    <span class="t2"><b>AI</b> Agent</span>
+    <p class="sub">Kantor kecil yang mengubah video panjang menjadi klip pendek, dikerjakan tim agen AI.</p>
   </header>
 
-  <div class="studio">
-    <section class="panel">
-      <div class="panelHead"><span><span class="dots"><i></i><i></i><i></i></span>AI TEAM FLOOR / RUANG KERJA KLIP</span><em id="clock"></em></div>
-      <div class="floorWrap">
-        <canvas id="floor" role="img" aria-label="Studio pixel-art: enam agen AI berjalan antar meja sesuai tahap pemrosesan video"></canvas>
-        <div id="labels"></div>
-      </div>
-    </section>
-
-    <aside class="side">
-      <div class="panel"><div class="panelHead">RUNNING TASK <em>tugas berjalan</em></div><div class="panelBody" id="runBody"></div></div>
-      <div class="panel"><div class="panelHead">ACTIVE AGENT <em>01 / tim</em></div><div class="panelBody" id="agentBody"></div></div>
-      <div class="panel"><div class="panelHead">LOG AKTIVITAS <em>02 / activity</em></div><div class="panelBody" id="logBody"></div></div>
-      <div class="panel"><div class="panelHead">STUDIO CONTROL <em>03 / lokal</em></div><div class="panelBody ctl">
-        <button id="btnDemo">▶ Putar demo tim AI</button>
-        <button id="btnReset">Reset tampilan</button>
-      </div></div>
-    </aside>
+  <div class="stage">
+    <div id="office">
+      <div id="bubbles"></div>
+      <div id="notice">Memuat kantor 3D…</div>
+    </div>
+    <div class="stageBar">
+      <span class="pillBar live" id="chipLive"><i></i> LIVE</span>
+      <span class="pillBar" id="clock"></span>
+    </div>
+    <div class="stageHint">Seret untuk memutar · gulir untuk zoom</div>
   </div>
 
-  <section class="sec">
-    <h2>Masukkan video</h2>
-    <div id="drop">
-      <strong>Seret video mentah ke sini</strong>
-      <span>atau klik untuk memilih file (.mp4 .mov .mkv .webm .avi .m4v)</span>
-      <input id="file" type="file" accept="video/*,.mkv" multiple hidden>
+  <div class="ctrl">
+    <button class="big" id="btnDemo">▶ Putar demo 3 video</button>
+    <span class="muted" id="flowCount"></span>
+  </div>
+
+  <h2>Alur pekerjaan</h2>
+  <div class="card flow" id="flow"></div>
+
+  <h2>Masukkan video</h2>
+  <div id="drop">
+    <strong>Seret video mentah ke sini</strong>
+    <span>atau klik untuk memilih file (.mp4 .mov .mkv .webm .avi .m4v)</span>
+    <input id="file" type="file" accept="video/*,.mkv" multiple hidden>
+  </div>
+  <div id="uploads" class="list" style="margin-top:12px"></div>
+
+  <h2>Atau tempel link</h2>
+  <div class="card">
+    <textarea id="links" rows="3" placeholder="Tempel link YouTube / Google Drive / link video langsung. Satu link per baris."></textarea>
+    <div class="row" style="margin-top:10px">
+      <span class="muted">Google Drive harus diset "Siapa saja yang memiliki link".</span>
+      <button class="btn" id="sendLinks">Unduh otomatis</button>
     </div>
-    <div id="uploads" class="list" style="margin-top:12px"></div>
-  </section>
+    <div id="downloads" class="list" style="margin-top:12px"></div>
+  </div>
 
-  <section class="sec">
-    <h2>Atau tempel link</h2>
-    <div class="card">
-      <textarea id="links" rows="3" placeholder="Tempel link YouTube / Google Drive / link video langsung. Satu link per baris."></textarea>
-      <div class="row" style="margin-top:10px">
-        <span class="muted">Google Drive harus diset "Siapa saja yang memiliki link".</span>
-        <button class="btn" id="sendLinks">Unduh otomatis</button>
-      </div>
-      <div id="downloads" class="list" style="margin-top:12px"></div>
-    </div>
-  </section>
+  <h2>Hasil klip</h2>
+  <div id="results" class="list"></div>
 
-  <section class="sec">
-    <h2>Hasil klip</h2>
-    <div id="results" class="list"></div>
-  </section>
-
-  <section class="sec" id="failedWrap" hidden>
+  <div id="failedWrap" hidden>
     <h2>Gagal</h2>
     <div id="failed" class="list"></div>
-  </section>
+  </div>
 </main>
 
 <script>
@@ -302,7 +284,13 @@ $("results").onclick = async (e) => {
 
 refresh();
 setInterval(refresh, 3000);
+
+// Pesan cadangan jika kantor 3D gagal dimuat (WebGL mati atau CDN three.js tidak terjangkau)
+setTimeout(() => {
+  const n = $("notice");
+  if (n && !window.updateStudio) n.textContent = "Kantor 3D tidak bisa dimuat (WebGL nonaktif atau CDN three.js tidak terjangkau). Fitur lain tetap berfungsi.";
+}, 6000);
 </script>
-<script src="/studio.js" defer></script>
+<script type="module" src="/studio.js"></script>
 </body>
 </html>

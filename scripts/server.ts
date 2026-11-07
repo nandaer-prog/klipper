@@ -140,9 +140,12 @@ const listFiles = async (dir: string, exts?: string[]) => {
 };
 
 const getState = async () => {
-  let status: unknown = null;
+  let jobs: unknown[] = [];
   try {
-    status = JSON.parse(await readFile(path.join(WORK, "status.json"), "utf8"));
+    const parsed = JSON.parse(await readFile(path.join(WORK, "jobs.json"), "utf8")) as {
+      jobs?: unknown[];
+    };
+    jobs = parsed.jobs ?? [];
   } catch {
     // tidak ada proses berjalan
   }
@@ -170,7 +173,7 @@ const getState = async () => {
   }
   results.sort((a, b) => b.mtime - a.mtime);
 
-  return { status, queue, failed, results, downloads };
+  return { jobs, queue, failed, results, downloads };
 };
 
 const cleanName = (raw: string) => {

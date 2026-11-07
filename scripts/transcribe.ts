@@ -13,6 +13,7 @@ import {
   WHISPER_DIR,
   WHISPER_LANGUAGE,
   WHISPER_MODEL,
+  WHISPER_THREADS,
   WHISPER_VERSION,
 } from "./config";
 
@@ -20,6 +21,7 @@ import {
 export const transcribeVideo = async (
   videoPath: string,
   workDir: string,
+  onProgress?: (pct: number) => void,
 ): Promise<Caption[]> => {
   const captionsFile = path.join(workDir, "captions.json");
   if (existsSync(captionsFile)) {
@@ -46,8 +48,12 @@ export const transcribeVideo = async (
     modelFolder: WHISPER_DIR,
     language: WHISPER_LANGUAGE,
     tokenLevelTimestamps: true,
-    onProgress: (p) =>
-      process.stdout.write(`\rTranskripsi ${Math.round(p * 100)}%`),
+    additionalArgs: ["-t", WHISPER_THREADS],
+    onProgress: (p) => {
+      const pct = Math.round(p * 100);
+      process.stdout.write(`\rTranskripsi ${pct}%`);
+      onProgress?.(pct);
+    },
   });
   process.stdout.write("\n");
 
