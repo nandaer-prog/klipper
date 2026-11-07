@@ -34,7 +34,8 @@
     "upgrade": "remotion upgrade",
     "lint": "eslint src scripts && tsc",
     "clip": "tsx scripts/pipeline.ts",
-    "watch": "tsx scripts/watch.ts"
+    "watch": "tsx scripts/watch.ts",
+    "server": "tsx scripts/server.ts"
   },
   "allowScripts": {
     "esbuild": false

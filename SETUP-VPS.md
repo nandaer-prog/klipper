@@ -38,6 +38,24 @@ Jalankan terus di background dengan pm2:
 npm i -g pm2 && pm2 start "npm run watch" --name clipper && pm2 save && pm2 startup
 ```
 
+## Dashboard web (upload dan unduh lewat browser)
+```bash
+pm2 start "APP_PASSWORD=GANTI_PASSWORD_KUAT npm run server" --name clipper-ui && pm2 save
+```
+Buka `http://IP_VPS:8080` di browser, login dengan username bebas dan password tadi. Seret video ke halaman, lalu pantau status, putar hasilnya, dan unduh klip di sana.
+
+- **Unduh dari link:** tempel link YouTube, Google Drive (file publik, "Siapa saja yang memiliki link"), atau link video langsung di kolom link. Server mengunduh dengan `yt-dlp` dan memasukkannya ke antrean otomatis. Pasang `yt-dlp` di VPS dulu:
+  ```bash
+  sudo curl -L https://github.com/yt-dlp/yt-dlp/releases/latest/download/yt-dlp -o /usr/local/bin/yt-dlp
+  sudo chmod a+rx /usr/local/bin/yt-dlp
+  yt-dlp --version
+  ```
+  Perbarui secara berkala dengan `sudo yt-dlp -U`, karena YouTube sering berubah. Kalau YouTube menolak dengan pesan "Sign in to confirm you're not a bot" (umum pada IP VPS), ekspor cookie browser ke file `cookies.txt`, lalu jalankan server dengan `YTDLP_COOKIES=/path/cookies.txt`. Unduh hanya video yang Anda punya hak memakainya.
+- Port 8080 harus dibuka di firewall VPS (`sudo ufw allow 8080`).
+- Server ini memakai HTTP biasa, jadi password terkirim tanpa enkripsi. Untuk keamanan lebih, akses lewat SSH tunnel: `ssh -L 8080:localhost:8080 user@IP_VPS`, lalu buka `http://localhost:8080`, atau pasang Caddy/Nginx dengan HTTPS di depannya.
+- Ganti port dengan `PORT=9000`.
+- Dashboard hanya antarmuka. Pemrosesannya tetap dikerjakan watcher (`clipper`), jadi kedua proses PM2 harus berjalan.
+
 ## Pengaturan (environment variable)
 | Variabel | Default | Fungsi |
 |---|---|---|

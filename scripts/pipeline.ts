@@ -3,6 +3,7 @@ import path from "node:path";
 import { WORK } from "./config";
 import { pickClips } from "./pick-clips";
 import { renderClips } from "./render-clips";
+import { setStatus } from "./status";
 import { transcribeVideo } from "./transcribe";
 
 const slug = (file: string) =>
@@ -26,9 +27,11 @@ export const processVideo = async (videoPath: string) => {
   const workDir = path.join(WORK, id);
   console.log(`\n=== Memproses ${videoPath} (id: ${id}) ===`);
 
+  await setStatus({ file: path.basename(videoPath), stage: "Transkripsi suara", detail: "" });
   const captions = await transcribeVideo(videoPath, workDir);
   console.log(`Transkrip: ${captions.length} kata`);
 
+  await setStatus({ stage: "Claude memilih momen terbaik", detail: "" });
   const clips = await pickClips(captions, probeDuration(videoPath), workDir);
   console.log(`Claude memilih ${clips.length} klip:`);
   for (const c of clips) {

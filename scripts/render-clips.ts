@@ -7,6 +7,7 @@ import path from "node:path";
 import type { ClipProps } from "../src/types";
 import { LAYOUT, OUTPUT, ROOT } from "./config";
 import type { ClipPlan } from "./pick-clips";
+import { setStatus } from "./status";
 
 export const renderClips = async (
   id: string,
@@ -77,7 +78,8 @@ export const renderClips = async (
     publicDir: path.join(ROOT, "public"),
   });
 
-  for (const { n, props } of items) {
+  for (const [index, { n, props }] of items.entries()) {
+    let lastPct = -1;
     const composition = await selectComposition({
       serveUrl,
       id: "Clip",
@@ -90,10 +92,17 @@ export const renderClips = async (
       codec: "h264",
       outputLocation,
       inputProps: props,
-      onProgress: ({ progress }) =>
-        process.stdout.write(
-          `\rRender klip ${n}: ${Math.round(progress * 100)}%`,
-        ),
+      onProgress: ({ progress }) => {
+        const pct = Math.round(progress * 100);
+        process.stdout.write(`\rRender klip ${n}: ${pct}%`);
+        if (pct !== lastPct) {
+          lastPct = pct;
+          void setStatus({
+            stage: "Render klip",
+            detail: `Klip ${index + 1} dari ${items.length}: ${pct}%`,
+          });
+        }
+      },
     });
     process.stdout.write("\n");
     console.log(`Selesai: ${outputLocation}`);

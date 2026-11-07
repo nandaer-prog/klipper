@@ -1,12 +1,14 @@
-import { mkdir, readdir, rename, stat } from "node:fs/promises";
+import { mkdir, readdir, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { INBOX, VIDEO_EXT } from "./config";
 import { processVideo } from "./pipeline";
+import { clearStatus } from "./status";
 
 const DONE = path.join(INBOX, "done");
 const FAILED = path.join(INBOX, "failed");
 await mkdir(DONE, { recursive: true });
 await mkdir(FAILED, { recursive: true });
+await clearStatus();
 
 const lastSize = new Map<string, number>();
 let busy = false;
@@ -34,9 +36,16 @@ const tick = async () => {
       await rename(file, path.join(DONE, path.basename(file)));
     } catch (e) {
       console.error(`Gagal memproses ${file}:`, e);
-      await rename(file, path.join(FAILED, path.basename(file)));
+      const target = path.join(FAILED, path.basename(file));
+      await rename(file, target);
+      await writeFile(
+        `${target}.txt`,
+        e instanceof Error ? e.message : String(e),
+      );
+    } finally {
+      await clearStatus();
+      busy = false;
     }
-    busy = false;
     break;
   }
 };
