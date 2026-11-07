@@ -57,6 +57,8 @@
   .bubble i { display:inline-block; width:8px; height:8px; border-radius:50%; background:#9fb0c8; margin-right:6px; }
   .bubble.busy i { background:var(--ok); }
   .bubble b { font-weight:800; }
+  .bubble .jb { font-style:normal; color:var(--blue); font-weight:700; max-width:150px; display:inline-block; overflow:hidden; text-overflow:ellipsis; vertical-align:bottom; }
+  .bubble .jb:not(:empty)::before { content:" · "; color:#94a3b8; font-weight:400; }
   .bubble span { display:block; color:#475569; font-size:.92em; overflow:hidden; text-overflow:ellipsis; }
   .bubble.mini { padding:2px 8px; border-radius:99px; box-shadow:0 2px 6px rgba(20,40,90,.16); font-size:clamp(9px,.95vw,11px); opacity:.92; }
   .bubble.mini::after, .bubble.mini span { display:none; }

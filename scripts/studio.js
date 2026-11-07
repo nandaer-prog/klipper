@@ -1,5 +1,5 @@
 /* eslint-disable @remotion/deterministic-randomness -- kode browser, bukan komposisi Remotion */
-/* global document, window, performance, matchMedia, ResizeObserver, setInterval */
+/* global document, window, performance, matchMedia, ResizeObserver, setInterval, URL */
 // Virtual Office AI Agent: kantor 3D isometrik. Tiap agen punya ruangan sendiri dan
 // berjalan lewat lorong saat bekerja, mengantar video, atau beristirahat.
 import * as THREE from "three";
@@ -511,6 +511,8 @@ const agents = DEFS.map((d, i) => {
     working: false,
     walking: false,
     gesture: 0,
+    carrying: false,
+    carryBlend: 0,
     lookYaw: 0,
     lookTarget: 0,
     lookTimer: 0,
@@ -537,10 +539,28 @@ const sayFor = (a, text, secs) => {
 
 // kurir: antar video antar ruangan
 const errands = [];
-const requestErrand = (from, to, file) => {
-  errands.push({ from, to, file });
+const requestErrand = (from, to, file, jobId) => {
+  if (errands.some((e) => e.jobId === jobId && e.from === from && e.to === to)) return;
+  errands.push({ from, to, file, jobId });
   if (errands.length > 4) errands.shift();
 };
+// apakah job ini masih menunggu/sedang diantar kurir?
+const hasErrand = (id) => errands.some((e) => e.jobId === id) || (courier.errand && courier.errand.jobId === id);
+
+// letakkan kartu di ruang tujuan setelah diserahkan
+const releaseCard = (e) => {
+  courier.carrying = false;
+  const c = cards.get(e.jobId);
+  if (!c) return;
+  c.carrier = null;
+  if (c.orphan) {
+    removeCard(e.jobId); // job sudah selesai: kartu masuk ke rak hasil Miu
+    return;
+  }
+  const info = c.job ? stageInfo(c.job.stage) : { st: -1, wait: false };
+  c.loc = { st: e.to, wait: info.st === e.to ? info.wait : false };
+};
+
 const stepCourier = (dt) => {
   const a = courier;
   if (a.errand) {
@@ -550,9 +570,16 @@ const stepCourier = (dt) => {
         sayFor(a, `Mengambil ${clean(e.file)}`, 1.6);
         a.gesture = 1.2;
         e.phase = 1;
-        e.hold = 1.5;
+        e.hold = 1.3;
       } else if (e.phase === 1) {
         e.hold -= dt;
+        if (e.hold <= 0.7 && !e.picked) {
+          // kartu pindah ke tangan kurir
+          e.picked = true;
+          const c = cards.get(e.jobId);
+          if (c) c.carrier = a;
+          a.carrying = true;
+        }
         if (e.hold <= 0) {
           e.phase = 2;
           goTo(a, STATIONS[e.to].visit);
@@ -564,6 +591,10 @@ const stepCourier = (dt) => {
         e.hold = 2;
       } else {
         e.hold -= dt;
+        if (e.hold <= 1.2 && !e.released) {
+          e.released = true;
+          releaseCard(e);
+        }
         if (e.hold <= 0) {
           a.errand = null;
           a.idle = 1;
@@ -711,6 +742,20 @@ const stepAgent = (a, dt, activeSet) => {
     r.armR.sh.rotation.x = r.armR.sh.rotation.x * (1 - g) + -1.25 * g;
     r.armR.elbow.rotation.x = r.armR.elbow.rotation.x * (1 - g) + -0.3 * g;
   }
+  // membawa file: kedua tangan memegang kartu di depan dada
+  a.carryBlend += ((a.carrying ? 1 : 0) - a.carryBlend) * Math.min(1, dt * 8);
+  if (a.carryBlend > 0.01) {
+    const c = a.carryBlend;
+    r.armL.sh.rotation.x = r.armL.sh.rotation.x * (1 - c) + -0.95 * c;
+    r.armR.sh.rotation.x = r.armR.sh.rotation.x * (1 - c) + -0.95 * c;
+    r.armL.elbow.rotation.x = r.armL.elbow.rotation.x * (1 - c) + -0.85 * c;
+    r.armR.elbow.rotation.x = r.armR.elbow.rotation.x * (1 - c) + -0.85 * c;
+    r.armL.sh.rotation.z = 0.12 * c;
+    r.armR.sh.rotation.z = -0.12 * c;
+  } else {
+    r.armL.sh.rotation.z = 0;
+    r.armR.sh.rotation.z = 0;
+  }
 
   // kepala: melirik ke sekitar saat santai, menunduk saat bekerja
   a.lookTimer -= dt;
@@ -774,6 +819,22 @@ const tagFor = () => {
   return el;
 };
 
+const removeCard = (id) => {
+  const c = cards.get(id);
+  if (!c) return;
+  world.remove(c.g);
+  c.tag.remove();
+  cards.delete(id);
+};
+
+// posisi kartu di sebuah ruang: tergeletak di nampan (menunggu) atau berdiri di atas meja (dikerjakan)
+const locSpot = (loc) => {
+  const d = DESKS[loc.st];
+  return loc.wait
+    ? { p: new THREE.Vector3(d.x - 0.85, 0.84, d.z + 0.22), flat: true }
+    : { p: new THREE.Vector3(d.x + 0.95, 1.2, d.z + 0.15), flat: false };
+};
+
 const syncCards = (m) => {
   const seen = new Set();
   m.jobs.forEach((j) => {
@@ -782,23 +843,26 @@ const syncCards = (m) => {
     seen.add(j.id);
     let c = cards.get(j.id);
     if (!c) {
-      const home = DESKS[1];
-      c = { g: makeCard(hashColor(j.id)), tag: tagFor(), pos: new THREE.Vector3(home.x - 1, 0.9, home.z + 2), rot: 0 };
+      // job baru dari antrean yang akan diantar kurir: kartu mulai di meja Aoi
+      const fromQueue = errands.some((e) => e.jobId === j.id && e.from === 0);
+      const loc = fromQueue ? { st: 0, wait: true } : { st: info.st, wait: info.wait };
+      const spot = locSpot(loc);
+      c = { g: makeCard(hashColor(j.id)), tag: tagFor(), pos: spot.p.clone(), loc, carrier: null, orphan: false };
       c.g.position.copy(c.pos);
       cards.set(j.id, c);
     }
-    const d = DESKS[info.st];
-    c.target = info.wait ? new THREE.Vector3(d.x - 0.85, 0.84, d.z + 0.22) : new THREE.Vector3(d.x, 1.95, d.z - 0.05);
-    c.flat = info.wait;
     c.job = j;
+    c.orphan = false;
+    // tanpa kurir yang bertugas, kartu langsung menyesuaikan tahap terbaru
+    if (!c.carrier && !hasErrand(j.id) && (c.loc.st !== info.st || c.loc.wait !== info.wait)) {
+      c.loc = { st: info.st, wait: info.wait };
+    }
   });
   [...cards.keys()].forEach((id) => {
-    if (!seen.has(id)) {
-      const c = cards.get(id);
-      world.remove(c.g);
-      c.tag.remove();
-      cards.delete(id);
-    }
+    if (seen.has(id)) return;
+    const c = cards.get(id);
+    if (hasErrand(id) || c.carrier) c.orphan = true; // masih akan diantar ke ruang tujuan
+    else removeCard(id);
   });
 
   // antrean (belum masuk transkripsi): tumpukan berkas di meja Aoi
@@ -828,6 +892,7 @@ let demo = null;
 let celebrateUntil = 0;
 let prevStages = new Map();
 let primed = false;
+let lastFinished = "";
 const now = () => performance.now();
 
 const totals = (s) => ({
@@ -905,15 +970,16 @@ const detectMoves = (m) => {
       const next = stageInfo(j.stage).st;
       const prevJ = prevStages.get(id);
       if (!prevJ) {
-        if (next === 1) requestErrand(0, 1, j.file);
+        if (next === 1) requestErrand(0, 1, j.file, id);
       } else {
         const before = stageInfo(prevJ.stage).st;
-        if (before >= 0 && next !== before) requestErrand(before, next, j.file);
+        if (before >= 0 && next !== before) requestErrand(before, next, j.file, id);
       }
     });
     prevStages.forEach((j, id) => {
       if (!cur.has(id) && stageInfo(j.stage).st === 3) {
-        requestErrand(3, 4, j.file);
+        requestErrand(3, 4, j.file, id);
+        lastFinished = j.file;
         celebrateUntil = Math.max(celebrateUntil, now() + 7000);
       }
     });
@@ -975,7 +1041,7 @@ let hoverRoom = -1;
 const bubbleEls = agents.map((a) => {
   const el = document.createElement("div");
   el.className = "bubble";
-  el.innerHTML = `<i></i><b>${a.name}</b><span></span>`;
+  el.innerHTML = `<i></i><b>${a.name}</b><em class="jb"></em><span></span>`;
   bubbleLayer.appendChild(el);
   return el;
 });
@@ -1016,22 +1082,49 @@ const roomTags = ROOMS.map((r, i) => {
   roomTags.push(el);
 }
 
+const runningAt = (m, stg) => m.jobs.find((x) => stageInfo(x.stage).st === stg && !stageInfo(x.stage).wait);
+
+// nama pekerjaan yang sedang ditangani agen (ditampilkan di samping namanya)
+const agentJob = (a, m) => {
+  if (a === courier) return a.errand ? clean(a.errand.file) : "";
+  switch (a.station) {
+    case 0: {
+      if (m.downloading) {
+        try {
+          return new URL(m.downloading.url).hostname.replace(/^www\./, "");
+        } catch {
+          return "link";
+        }
+      }
+      return m.queue.length ? clean(m.queue[0]) + (m.queue.length > 1 ? ` +${m.queue.length - 1}` : "") : "";
+    }
+    case 1:
+    case 2:
+    case 3: {
+      const x = runningAt(m, a.station);
+      return x ? clean(x.file) : "";
+    }
+    case 4:
+      return model.active.has(4) && lastFinished ? clean(lastFinished) : "";
+    default:
+      return "";
+  }
+};
+
+// keterangan tahap (nama file sudah ada di samping nama agen)
 const workText = (a, m) => {
-  const j = (stg) => m.jobs.find((x) => stageInfo(x.stage).st === stg && !stageInfo(x.stage).wait);
   switch (a.station) {
     case 0:
       return m.downloading ? `Mengunduh link · ${Math.round(m.downloading.progress)}%` : `Mengatur antrean · ${m.queue.length} video`;
     case 1: {
-      const x = j(1);
-      return x ? `Transkripsi ${clean(x.file)}${x.detail ? " · " + x.detail : ""}` : "Transkripsi";
+      const x = runningAt(m, 1);
+      return `Transkripsi suara${x && x.detail ? " · " + x.detail : ""}`;
     }
-    case 2: {
-      const x = j(2);
-      return x ? `Memilih momen · ${clean(x.file)}` : "Memilih momen";
-    }
+    case 2:
+      return "Memilih momen terbaik";
     case 3: {
-      const x = j(3);
-      return x ? `Render ${clean(x.file)}${x.detail ? " · " + x.detail : ""}` : "Render";
+      const x = runningAt(m, 3);
+      return `Render klip${x && x.detail ? " · " + x.detail : ""}`;
     }
     default:
       return "Klip selesai, siap diunduh";
@@ -1134,12 +1227,29 @@ renderer.setAnimationLoop(() => {
   });
 
   cards.forEach((c) => {
-    c.pos.lerp(c.target, Math.min(1, dt * 4));
-    const bob = c.flat ? 0 : Math.sin(sec * 3 + c.pos.x) * 0.06;
-    c.g.position.set(c.pos.x, c.pos.y + bob, c.pos.z);
-    c.g.rotation.x = c.flat ? -Math.PI / 2 : 0;
-    c.g.rotation.y = c.flat ? 0.3 : Math.PI * 0.25;
-    c.g.scale.setScalar(c.flat ? 0.75 : 1);
+    let flat = false;
+    let scale = 0.85;
+    let tilt = 0;
+    if (c.carrier) {
+      // dibawa kurir: di depan dada, ikut bergoyang saat berjalan
+      const a = c.carrier;
+      const fx = Math.sin(a.face) * 0.46;
+      const fz = Math.cos(a.face) * 0.46;
+      const walkBob = Math.abs(Math.cos(a.phase)) * 0.03 * clamp(Math.hypot(a.vx, a.vz) / MAX_SPEED, 0, 1);
+      c.pos.lerp(new THREE.Vector3(a.x + fx, 1.12 + walkBob, a.z + fz), Math.min(1, dt * 16));
+      scale = 0.62;
+      tilt = -0.2;
+    } else {
+      const spot = locSpot(c.loc);
+      c.pos.lerp(spot.p, Math.min(1, dt * 5));
+      flat = spot.flat;
+      if (flat) scale = 0.75;
+    }
+    c.flat = flat;
+    c.g.position.copy(c.pos);
+    c.g.rotation.x = flat ? -Math.PI / 2 : tilt;
+    c.g.rotation.y = flat ? 0.3 : Math.PI * 0.25;
+    c.g.scale.setScalar(scale);
   });
   resultCards.forEach((c) => (c.rotation.y = Math.PI * 0.25));
 
@@ -1161,6 +1271,9 @@ renderer.setAnimationLoop(() => {
     el.classList.toggle("on", show);
     el.classList.toggle("mini", !show);
     el.lastChild.textContent = text;
+    const jb = agentJob(a, model);
+    const jbEl = el.querySelector(".jb");
+    if (jbEl.textContent !== jb) jbEl.textContent = jb;
     el.classList.toggle("busy", a.working || (a.say && t < a.sayUntil));
   });
   roomTags.forEach((el, i) => {
