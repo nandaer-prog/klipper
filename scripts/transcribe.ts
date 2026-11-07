@@ -11,6 +11,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import {
   WHISPER_DIR,
+  WHISPER_BEAM,
   WHISPER_LANGUAGE,
   WHISPER_MODEL,
   WHISPER_THREADS,
@@ -48,7 +49,7 @@ export const transcribeVideo = async (
     modelFolder: WHISPER_DIR,
     language: WHISPER_LANGUAGE,
     tokenLevelTimestamps: true,
-    additionalArgs: ["-t", WHISPER_THREADS],
+    additionalArgs: ["-t", WHISPER_THREADS, "-bs", WHISPER_BEAM, "-bo", WHISPER_BEAM],
     onProgress: (p) => {
       const pct = Math.round(p * 100);
       process.stdout.write(`\rTranskripsi ${pct}%`);

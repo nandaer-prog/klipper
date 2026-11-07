@@ -17,6 +17,8 @@ export const WHISPER_LANGUAGE = (process.env.WHISPER_LANGUAGE ??
 
 // Jumlah thread Whisper. Sisakan CPU untuk tahap lain yang berjalan bersamaan.
 export const WHISPER_THREADS = process.env.WHISPER_THREADS ?? "3";
+// Beam search 1 (greedy) jauh lebih cepat di CPU VPS; naikkan ke 5 untuk akurasi lebih tinggi
+export const WHISPER_BEAM = process.env.WHISPER_BEAM ?? "1";
 export const RENDER_CONCURRENCY = Number(process.env.RENDER_CONCURRENCY ?? 2);
 
 export const MIN_CLIP_SEC = Number(process.env.MIN_CLIP_SEC ?? 25);
