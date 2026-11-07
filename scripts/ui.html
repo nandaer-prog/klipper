@@ -3,102 +3,175 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Kantor Clipper</title>
-<script type="importmap">
-{ "imports": {
-  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
-} }
-</script>
+<title>Klipper AI Agency</title>
 <style>
   :root {
-    --bg:#f3f5f8; --grid:#e3e8ef; --card:#ffffff; --line:#dde2ea; --text:#18202d; --muted:#667085;
-    --accent:#2563eb; --ok:#16a34a; --bad:#dc2626;
+    --navy:#1f2a4d; --paper:#f7f3e6; --panel:#f3f7fb; --head:#dce9f5; --red:#e8452c; --yellow:#ffc933;
+    --line:#1f2a4d; --muted:#5d6b8a; --ok:#1f9d63; --bad:#d6342a; --accent:#2f5bd3;
     --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   }
   * { box-sizing: border-box; }
   body {
-    margin:0; color:var(--text); font:15px/1.5 system-ui,Segoe UI,Arial,sans-serif;
-    background-color:var(--bg);
-    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
-    background-size: 32px 32px;
+    margin:0; color:var(--navy); font:14px/1.45 var(--mono);
+    background:#eaf1f8;
+    background-image: repeating-linear-gradient(45deg, rgba(31,42,77,.035) 0 2px, transparent 2px 14px);
   }
-  main { max-width: 1040px; margin: 0 auto; padding: 28px 16px 72px; }
-  h1 { font: 700 26px var(--mono); margin: 0 0 4px; letter-spacing:-.01em; }
-  .sub { color:var(--muted); margin:0 0 18px; }
-  h2 { font: 600 13px var(--mono); margin: 32px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing:.06em; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+  main { max-width:1280px; margin:0 auto; padding:12px 12px 64px; }
 
-  #office { position:relative; height:360px; border-radius:14px; border:1px solid var(--line); background:rgba(255,255,255,.55); overflow:hidden; cursor:grab; }
-  #office:active { cursor:grabbing; }
-  #office canvas { display:block; width:100%; height:100%; }
-  #officeNote { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font:14px var(--mono); text-align:center; padding:20px; pointer-events:none; }
-  .hint { color:var(--muted); font:12px var(--mono); margin-top:8px; }
+  .panel { background:var(--panel); border:3px solid var(--line); box-shadow:0 0 0 2px #fff inset, 4px 4px 0 rgba(31,42,77,.18); }
+  .panelHead { display:flex; align-items:center; justify-content:space-between; gap:8px; background:var(--head); border-bottom:3px solid var(--line); padding:6px 10px; font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; }
+  .panelHead em { font-style:normal; font-weight:400; color:var(--muted); letter-spacing:0; text-transform:none; }
+  .panelBody { padding:10px; }
+  .dots { display:inline-flex; gap:4px; margin-right:6px; }
+  .dots i { width:9px; height:9px; border:2px solid var(--line); display:inline-block; }
+  .dots i:nth-child(1){background:var(--red)} .dots i:nth-child(2){background:var(--yellow)} .dots i:nth-child(3){background:#4fb36b}
 
-  #drop { border:2px dashed #c4ccd8; border-radius:14px; padding:34px 16px; text-align:center; cursor:pointer; transition:.15s; background:rgba(255,255,255,.7); }
-  #drop.over { border-color:var(--accent); background:#eef4ff; }
-  #drop strong { display:block; font:700 17px var(--mono); margin-bottom:4px; }
-  #drop span { color:var(--muted); }
+  .topbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:10px; background:var(--paper); border:3px solid var(--line); box-shadow:0 0 0 2px #fff inset; padding:10px 14px; margin-bottom:12px; }
+  .brand { display:flex; align-items:center; gap:12px; }
+  .logo { width:38px; height:38px; display:grid; grid-template-columns:1fr 1fr; border:3px solid var(--line); }
+  .logo i:nth-child(1){background:var(--red)} .logo i:nth-child(2){background:var(--navy)} .logo i:nth-child(3){background:#f2a33a} .logo i:nth-child(4){background:var(--accent)}
+  .brand small { display:block; color:var(--red); font-size:10px; font-weight:700; letter-spacing:.12em; }
+  .brand h1 { margin:0; font-size:22px; line-height:1.1; letter-spacing:.02em; }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; }
+  .chip { border:2px solid var(--line); background:#f1f7fc; padding:4px 10px; font-size:11px; font-weight:700; }
+  .chip.live i { display:inline-block; width:9px; height:9px; background:var(--ok); border:2px solid var(--line); margin-right:4px; }
+  .chip.off i { background:var(--bad); }
+
+  .studio { display:grid; grid-template-columns:minmax(0,1fr) 310px; gap:12px; align-items:start; }
+  .floorWrap { position:relative; background:#c98f4e; line-height:0; border-top:0; }
+  #floor { display:block; width:100%; height:auto; aspect-ratio:16/9; image-rendering:pixelated; image-rendering:crisp-edges; image-rendering:pixelated; }
+  #labels { position:absolute; inset:0; pointer-events:none; line-height:1.2; overflow:hidden; }
+  .sign, .tag { position:absolute; transform:translate(-50%,-100%); white-space:nowrap; text-align:center; }
+  .sign { background:rgba(255,252,240,.96); border:2px solid var(--line); padding:1px 6px; font-size:clamp(7px,1vw,11px); }
+  .sign b { display:block; letter-spacing:.06em; }
+  .sign small { display:block; font-size:.8em; color:var(--muted); }
+  .sign.on { background:var(--yellow); }
+  .sign.dim { opacity:.8; }
+  .tag { pointer-events:auto; cursor:pointer; background:#fff; border:2px solid var(--line); padding:0 5px; font-size:clamp(7px,.95vw,10px); transition:left .1s linear, top .1s linear; }
+  .tag b { display:block; }
+  .tag small { display:block; font-size:.78em; color:var(--muted); }
+  .tag .st { display:none; position:absolute; left:50%; top:-9px; width:6px; height:6px; margin-left:-3px; background:var(--yellow); border:1px solid var(--line); }
+  .tag.work .st { display:block; }
+  .tag.sel { outline:2px dashed var(--accent); outline-offset:2px; }
+
+  .side > .panel + .panel { margin-top:12px; }
+  .kv { font-size:11px; font-weight:700; letter-spacing:.05em; color:var(--muted); }
+  .dot { display:inline-block; width:8px; height:8px; border:2px solid var(--line); background:#9fb0c8; margin-right:4px; }
+  .dot.on { background:#4fb36b; }
+  .big { font-size:15px; font-weight:700; margin-top:4px; word-break:break-word; }
+  .mut { color:var(--muted); font-size:11px; }
+  .agentHead { display:flex; gap:10px; align-items:center; margin-bottom:8px; }
+  .agentHead b { font-size:16px; }
+  .av { width:38px; height:38px; display:flex; align-items:center; justify-content:center; color:#fff; font-weight:700; border:3px solid var(--line); }
+  .two { display:grid; grid-template-columns:1fr 1fr; gap:6px; }
+  .box { border:2px solid #b9c7da; background:#fff; padding:4px 8px; margin-bottom:6px; font-size:12px; font-weight:700; }
+  .box small { display:block; font-size:9px; color:var(--muted); letter-spacing:.08em; }
+  .picker { display:grid; grid-template-columns:repeat(3,1fr); gap:4px; }
+  .picker button { font:inherit; font-size:10px; border:2px solid #b9c7da; background:#fff; padding:3px 4px; cursor:pointer; text-align:left; color:var(--navy); }
+  .picker button.on { border-color:var(--navy); background:#e6f4ee; }
+  .picker i { display:inline-block; width:7px; height:7px; margin-right:4px; border:1px solid var(--navy); }
+  .log { font-size:11px; border-bottom:1px dashed #c3cfe0; padding:3px 0; word-break:break-word; }
+  .log time { color:var(--muted); margin-right:6px; }
+  .ctl button { width:100%; font:inherit; font-weight:700; font-size:12px; padding:8px; border:3px solid var(--line); cursor:pointer; color:var(--navy); }
+  .ctl button + button { margin-top:8px; }
+  #btnDemo { background:var(--yellow); }
+  #btnReset { background:#fff; }
+  .ctl button:hover { filter:brightness(1.05); }
+
+  .sec { margin-top:22px; }
+  .sec > h2 { margin:0 0 8px; font-size:12px; letter-spacing:.1em; text-transform:uppercase; }
+  .card { background:var(--panel); border:3px solid var(--line); box-shadow:0 0 0 2px #fff inset; padding:12px; }
+  #drop { border:3px dashed #8da2c4; padding:30px 16px; text-align:center; cursor:pointer; background:rgba(255,255,255,.65); transition:.12s; }
+  #drop.over { border-color:var(--accent); background:#e8f0ff; }
+  #drop strong { display:block; font-size:16px; margin-bottom:4px; }
+  #drop span { color:var(--muted); font-size:12px; }
   .row { display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; }
-  .muted { color:var(--muted); font-size:13px; }
-  .bar { height:8px; background:#e8ecf2; border-radius:99px; overflow:hidden; margin-top:8px; }
+  .muted { color:var(--muted); font-size:12px; }
+  .bar { height:10px; background:#dfe7f2; border:2px solid var(--line); margin-top:8px; }
   .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
   .list > * + * { margin-top:10px; }
-  .clips { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; margin-top:12px; }
-  .clip video { width:100%; aspect-ratio:9/16; background:#000; border-radius:10px; }
+  .clips { display:grid; grid-template-columns:repeat(auto-fill,minmax(170px,1fr)); gap:12px; margin-top:12px; }
+  .clip video { width:100%; aspect-ratio:9/16; background:#000; border:3px solid var(--line); }
   .clip .row { margin-top:6px; }
-  a.btn, button.btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:7px 13px; font:600 13px var(--mono); text-decoration:none; cursor:pointer; }
-  a.btn:hover, button.btn:hover { filter:brightness(1.08); }
-  button.ghost { background:#fff; color:var(--bad); border:1px solid var(--line); }
-  .pill { display:inline-block; padding:2px 10px; border-radius:99px; font:12px var(--mono); background:#eef1f6; color:var(--muted); }
-  .pill.run { background:#dbeafe; color:#1d4ed8; }
-  .err { color:var(--bad); font-size:13px; white-space:pre-wrap; word-break:break-word; }
-  .empty { color:var(--muted); padding:8px 0; }
-  textarea { width:100%; background:#fff; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px; font:inherit; resize:vertical; }
-  textarea:focus { outline:2px solid #bfd3ff; border-color:var(--accent); }
-  .dl { border-top:1px solid var(--line); padding-top:10px; }
+  a.btn, button.btn { background:var(--accent); color:#fff; border:2px solid var(--line); padding:6px 12px; font:700 12px var(--mono); text-decoration:none; cursor:pointer; }
+  a.btn:hover, button.btn:hover { filter:brightness(1.1); }
+  button.ghost { background:#fff; color:var(--bad); }
+  .pill { display:inline-block; padding:1px 8px; border:2px solid var(--line); font-size:11px; background:#eef3fa; }
+  .pill.run { background:#dbe7ff; }
+  .err { color:var(--bad); font-size:12px; white-space:pre-wrap; word-break:break-word; }
+  .empty { color:var(--muted); padding:6px 0; }
+  textarea { width:100%; background:#fff; color:var(--navy); border:3px solid var(--line); padding:10px; font:13px var(--mono); resize:vertical; }
+  textarea:focus { outline:3px solid #bcd0ff; }
+  .dl { border-top:2px dashed #b9c7da; padding-top:10px; }
   .dl .u { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60%; }
-  @media (max-width: 600px) { #office { height:300px; } }
+
+  @media (max-width: 960px) { .studio { grid-template-columns:1fr; } }
 </style>
 </head>
 <body>
 <main>
-  <h1>Kantor Clipper</h1>
-  <p class="sub">Masukkan video, lalu lihat tim kecil Anda bekerja menjadi klip pendek.</p>
-
-  <div id="office" role="img" aria-label="Kantor 3D: lima meja kerja yang menunjukkan tahap pemrosesan video">
-    <div id="officeNote">Memuat kantor 3D…</div>
-  </div>
-  <div class="hint">Seret untuk memutar, gulir untuk zoom. Meja menyala = tahap yang sedang berjalan.</div>
-
-  <h2>Masukkan video</h2>
-  <div id="drop">
-    <strong>Seret video mentah ke sini</strong>
-    <span>atau klik untuk memilih file (.mp4 .mov .mkv .webm .avi .m4v)</span>
-    <input id="file" type="file" accept="video/*,.mkv" multiple hidden>
-  </div>
-  <div id="uploads" class="list" style="margin-top:12px"></div>
-
-  <h2>Atau tempel link</h2>
-  <div class="card">
-    <textarea id="links" rows="3" placeholder="Tempel link YouTube / Google Drive / link video langsung. Satu link per baris."></textarea>
-    <div class="row" style="margin-top:10px">
-      <span class="muted">Google Drive harus diset "Siapa saja yang memiliki link".</span>
-      <button class="btn" id="sendLinks">Unduh otomatis</button>
+  <header class="topbar">
+    <div class="brand">
+      <div class="logo"><i></i><i></i><i></i><i></i></div>
+      <div><small>AI CREATIVE STUDIO / LIVE VIEW</small><h1>KLIPPER AI AGENCY</h1></div>
     </div>
-    <div id="downloads" class="list" style="margin-top:12px"></div>
+    <div class="chips">
+      <span class="chip" id="chipQueue">ANTREAN 0</span>
+      <span class="chip live" id="chipLive"><i></i> LIVE / TERHUBUNG</span>
+    </div>
+  </header>
+
+  <div class="studio">
+    <section class="panel">
+      <div class="panelHead"><span><span class="dots"><i></i><i></i><i></i></span>AI TEAM FLOOR / RUANG KERJA KLIP</span><em id="clock"></em></div>
+      <div class="floorWrap">
+        <canvas id="floor" role="img" aria-label="Studio pixel-art: enam agen AI berjalan antar meja sesuai tahap pemrosesan video"></canvas>
+        <div id="labels"></div>
+      </div>
+    </section>
+
+    <aside class="side">
+      <div class="panel"><div class="panelHead">RUNNING TASK <em>tugas berjalan</em></div><div class="panelBody" id="runBody"></div></div>
+      <div class="panel"><div class="panelHead">ACTIVE AGENT <em>01 / tim</em></div><div class="panelBody" id="agentBody"></div></div>
+      <div class="panel"><div class="panelHead">LOG AKTIVITAS <em>02 / activity</em></div><div class="panelBody" id="logBody"></div></div>
+      <div class="panel"><div class="panelHead">STUDIO CONTROL <em>03 / lokal</em></div><div class="panelBody ctl">
+        <button id="btnDemo">▶ Putar demo tim AI</button>
+        <button id="btnReset">Reset tampilan</button>
+      </div></div>
+    </aside>
   </div>
 
-  <h2>Sedang diproses</h2>
-  <div id="status" class="card"></div>
+  <section class="sec">
+    <h2>Masukkan video</h2>
+    <div id="drop">
+      <strong>Seret video mentah ke sini</strong>
+      <span>atau klik untuk memilih file (.mp4 .mov .mkv .webm .avi .m4v)</span>
+      <input id="file" type="file" accept="video/*,.mkv" multiple hidden>
+    </div>
+    <div id="uploads" class="list" style="margin-top:12px"></div>
+  </section>
 
-  <h2>Hasil klip</h2>
-  <div id="results" class="list"></div>
+  <section class="sec">
+    <h2>Atau tempel link</h2>
+    <div class="card">
+      <textarea id="links" rows="3" placeholder="Tempel link YouTube / Google Drive / link video langsung. Satu link per baris."></textarea>
+      <div class="row" style="margin-top:10px">
+        <span class="muted">Google Drive harus diset "Siapa saja yang memiliki link".</span>
+        <button class="btn" id="sendLinks">Unduh otomatis</button>
+      </div>
+      <div id="downloads" class="list" style="margin-top:12px"></div>
+    </div>
+  </section>
 
-  <div id="failedWrap" hidden>
+  <section class="sec">
+    <h2>Hasil klip</h2>
+    <div id="results" class="list"></div>
+  </section>
+
+  <section class="sec" id="failedWrap" hidden>
     <h2>Gagal</h2>
     <div id="failed" class="list"></div>
-  </div>
+  </section>
 </main>
 
 <script>
@@ -175,10 +248,12 @@ function safeJson(t) { try { return JSON.parse(t); } catch { return {}; } }
 let lastResultsSig = "";
 async function refresh() {
   let s;
-  try { s = await (await fetch("/api/state")).json(); } catch { return; }
+  try { s = await (await fetch("/api/state")).json(); }
+  catch { if (window.studioOnline) window.studioOnline(false); return; }
 
   window.__lastState = s;
-  if (window.updateOffice) window.updateOffice(s);
+  if (window.studioOnline) window.studioOnline(true);
+  if (window.updateStudio) window.updateStudio(s);
 
   $("downloads").innerHTML = s.downloads.map((d) => `
     <div class="dl">
@@ -187,21 +262,6 @@ async function refresh() {
       ${d.status === "mengunduh" ? `<div class="bar"><i style="width:${d.progress}%"></i></div>` : ""}
       ${d.error ? `<div class="err">${esc(d.error)}</div><button class="btn ghost" data-dismiss="${esc(d.id)}" style="margin-top:6px">Tutup</button>` : ""}
     </div>`).join("");
-
-  const st = s.status;
-  let html = "";
-  if (st) {
-    html += `<div class="row"><strong>${esc(st.file)}</strong><span class="pill run">${esc(st.stage)}</span></div>`;
-    if (st.detail) html += `<div class="muted">${esc(st.detail)}</div>`;
-  } else {
-    html += `<div class="empty">Tidak ada proses berjalan.</div>`;
-  }
-  const waiting = s.queue.filter((q) => !st || q.name !== st.file);
-  if (waiting.length) {
-    html += `<div class="muted" style="margin-top:10px">Antrean (${waiting.length}):</div>`;
-    html += waiting.map((q) => `<div class="row"><span>${esc(q.name)}</span><span class="muted">${mb(q.size)}</span></div>`).join("");
-  }
-  $("status").innerHTML = html;
 
   const sig = JSON.stringify(s.results);
   if (sig !== lastResultsSig) {
@@ -242,15 +302,7 @@ $("results").onclick = async (e) => {
 
 refresh();
 setInterval(refresh, 3000);
-
-// Pesan cadangan kalau kantor 3D gagal dimuat (WebGL mati atau CDN tidak terjangkau)
-setTimeout(() => {
-  const note = $("officeNote");
-  if (!note) return;
-  if (window.updateOffice) note.remove();
-  else note.textContent = "Kantor 3D tidak bisa dimuat (WebGL nonaktif atau CDN three.js tidak terjangkau). Dashboard tetap berfungsi.";
-}, 5000);
 </script>
-<script type="module" src="/office3d.js"></script>
+<script src="/studio.js" defer></script>
 </body>
 </html>

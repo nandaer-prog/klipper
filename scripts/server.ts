@@ -236,8 +236,8 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    if (req.method === "GET" && url.pathname === "/office3d.js") {
-      const js = await readFile(path.join(ROOT, "scripts", "office3d.js"));
+    if (req.method === "GET" && url.pathname === "/studio.js") {
+      const js = await readFile(path.join(ROOT, "scripts", "studio.js"));
       res
         .writeHead(200, { "content-type": "text/javascript; charset=utf-8" })
         .end(js);
