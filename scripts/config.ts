@@ -10,16 +10,20 @@ export const WORK = path.join(ROOT, "work");
 export const WHISPER_DIR = path.join(ROOT, ".whisper");
 
 export const WHISPER_VERSION = "1.5.5";
+// "base" cukup cepat di CPU VPS; "small" lebih akurat tetapi beberapa kali lebih lambat
 export const WHISPER_MODEL = (process.env.WHISPER_MODEL ??
-  "small") as WhisperModel;
+  "base") as WhisperModel;
 export const WHISPER_LANGUAGE = (process.env.WHISPER_LANGUAGE ??
   "id") as Language;
 
 // Jumlah thread Whisper. Sisakan CPU untuk tahap lain yang berjalan bersamaan.
-export const WHISPER_THREADS = process.env.WHISPER_THREADS ?? "3";
+export const WHISPER_THREADS = process.env.WHISPER_THREADS ?? "4";
 // Beam search 1 (greedy) jauh lebih cepat di CPU VPS; naikkan ke 5 untuk akurasi lebih tinggi
 export const WHISPER_BEAM = process.env.WHISPER_BEAM ?? "1";
-export const RENDER_CONCURRENCY = Number(process.env.RENDER_CONCURRENCY ?? 2);
+export const RENDER_CONCURRENCY = Number(process.env.RENDER_CONCURRENCY ?? 3);
+// Transkripsi dan render sama-sama berat. Di VPS dengan RAM kecil keduanya bergantian
+// (tahap Claude tetap berjalan bersamaan). Set 0 untuk mengizinkan berjalan bersamaan.
+export const HEAVY_EXCLUSIVE = (process.env.HEAVY_EXCLUSIVE ?? "1") === "1";
 
 export const MIN_CLIP_SEC = Number(process.env.MIN_CLIP_SEC ?? 25);
 export const MAX_CLIP_SEC = Number(process.env.MAX_CLIP_SEC ?? 75);

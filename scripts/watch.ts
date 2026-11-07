@@ -1,6 +1,6 @@
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { INBOX, VIDEO_EXT } from "./config";
+import { HEAVY_EXCLUSIVE, INBOX, VIDEO_EXT } from "./config";
 import {
   makeJob,
   STAGE,
@@ -69,6 +69,24 @@ const waitMemory = async (j: Job) => {
   if (waited) await setJob(j.id, { detail: "" });
 };
 
+// Kunci tahap berat: transkripsi dan render bergantian agar tidak berebut RAM
+let heavyChain: Promise<void> = Promise.resolve();
+const withHeavy = async <T>(j: Job, task: () => Promise<T>): Promise<T> => {
+  if (!HEAVY_EXCLUSIVE) return task();
+  let release!: () => void;
+  const mine = new Promise<void>((r) => (release = r));
+  const prev = heavyChain;
+  heavyChain = prev.then(() => mine);
+  await setJob(j.id, { detail: "Menunggu giliran CPU" });
+  await prev;
+  await setJob(j.id, { detail: "" });
+  try {
+    return await task();
+  } finally {
+    release();
+  }
+};
+
 const inflight = new Set<Job>();
 const queues = { claude: [] as Job[], render: [] as Job[] };
 const busy = { transcribe: false, claude: false, render: false };
@@ -99,8 +117,10 @@ const runRender = async () => {
   if (!j) return;
   busy.render = true;
   try {
-    await waitMemory(j);
-    await run.render(j);
+    await withHeavy(j, async () => {
+      await waitMemory(j);
+      await run.render(j);
+    });
     await finish(j);
   } catch (e) {
     await fail(j, e);
@@ -158,8 +178,10 @@ const tick = async () => {
     void (async () => {
       try {
         await setJob(j.id, { file: path.basename(moved), stage: STAGE.transcribe, detail: "" });
-        await waitMemory(j);
-        await run.transcribe(j);
+        await withHeavy(j, async () => {
+          await waitMemory(j);
+          await run.transcribe(j);
+        });
         queues.claude.push(j);
         await setJob(j.id, { stage: STAGE.waitClaude, detail: "" });
         void runClaude();
