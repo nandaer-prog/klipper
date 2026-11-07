@@ -3,7 +3,7 @@ import { bundle } from "@remotion/bundler";
 import { renderMedia, selectComposition } from "@remotion/renderer";
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { ClipProps } from "../src/types";
 import { buildCamera, type FacesJson } from "./camera";
@@ -79,6 +79,10 @@ export const renderClips = async (
   const outDir = path.join(OUTPUT, id);
   await mkdir(segDir, { recursive: true });
   await mkdir(outDir, { recursive: true });
+  // hapus klip sisa proses sebelumnya (misal jumlah klip kali ini lebih sedikit)
+  for (const f of await readdir(outDir)) {
+    if (/^clip_\d+\.mp4$/.test(f)) await rm(path.join(outDir, f), { force: true });
+  }
   captions = sanitizeCaptions(captions);
 
   // 1. Per klip: analisis wajah -> pilih mode kamera pintar atau komposit FFmpeg

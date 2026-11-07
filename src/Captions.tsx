@@ -27,6 +27,18 @@ export const Captions: React.FC<Props> = ({ captions, emphasis, style, accent })
   const page = [...pages].reverse().find((p) => p.startMs <= nowMs);
   if (!page || nowMs > page.startMs + page.durationMs + 250) return null;
 
+  // sub-token Whisper tanpa spasi di depan menempel ke kata sebelumnya: satu kata tidak boleh terpecah baris
+  const words: { key: number; text: string; fromMs: number; toMs: number }[] = [];
+  page.tokens.forEach((t, i) => {
+    if (i === 0 || /^\s/.test(t.text) || words.length === 0) {
+      words.push({ key: t.fromMs, text: t.text.trim(), fromMs: t.fromMs, toMs: t.toMs });
+    } else {
+      const w = words[words.length - 1]!;
+      w.text += t.text;
+      w.toMs = t.toMs;
+    }
+  });
+
   const pop = spring({
     frame: frame - Math.round((page.startMs / 1000) * fps),
     fps,
@@ -57,16 +69,20 @@ export const Captions: React.FC<Props> = ({ captions, emphasis, style, accent })
                 : { ...base, fontWeight: 900, fontSize: 92, color: "#fff", WebkitTextStroke: "14px #000", paintOrder: "stroke fill", textShadow: "0 8px 0 rgba(0,0,0,.35)" }
           }
         >
-          {page.tokens.map((t) => {
-            const active = t.fromMs <= nowMs && nowMs < t.toMs;
-            const strong = emph.has(norm(t.text));
+          {words.map((w) => {
+            const active = w.fromMs <= nowMs && nowMs < w.toMs;
+            const strong = emph.has(norm(w.text));
+            const wordStyle: React.CSSProperties = {
+              display: "inline-block",
+              whiteSpace: "nowrap",
+              margin: "4px 0.2em",
+            };
             if (style === "box") {
               return (
                 <span
-                  key={t.fromMs}
+                  key={w.key}
                   style={{
-                    display: "inline-block",
-                    margin: "4px 0",
+                    ...wordStyle,
                     padding: "0 16px",
                     borderRadius: 18,
                     background: active ? accent : strong ? "rgba(255,61,141,.92)" : "transparent",
@@ -74,21 +90,21 @@ export const Captions: React.FC<Props> = ({ captions, emphasis, style, accent })
                     transform: active ? "scale(1.06)" : "none",
                   }}
                 >
-                  {t.text}
+                  {w.text}
                 </span>
               );
             }
             return (
               <span
-                key={t.fromMs}
+                key={w.key}
                 style={{
-                  display: "inline-block",
+                  ...wordStyle,
                   color: strong ? "#FF3D8D" : active ? accent : "#fff",
                   transform: `scale(${strong ? 1.16 : active ? 1.08 : 1})`,
                   transformOrigin: "50% 70%",
                 }}
               >
-                {t.text}
+                {w.text}
               </span>
             );
           })}

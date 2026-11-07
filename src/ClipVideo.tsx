@@ -47,23 +47,7 @@ export const ClipVideo: React.FC<ClipProps> = (props) => {
   const { durationInFrames } = useVideoConfig();
 
   if (!src) {
-    return (
-      <AbsoluteFill
-        style={{
-          backgroundColor: "#111",
-          color: "#fff",
-          justifyContent: "center",
-          alignItems: "center",
-          padding: 80,
-          textAlign: "center",
-          fontFamily: "Arial, sans-serif",
-          fontSize: 44,
-          lineHeight: 1.4,
-        }}
-      >
-        Belum ada video. Di panel Props isi "src", misalnya work/sample/clip_01.mp4 (file ada di folder public/).
-      </AbsoluteFill>
-    );
+    return null;
   }
 
   return (
