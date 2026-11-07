@@ -23,20 +23,13 @@
   #office { position:absolute; inset:0; cursor:grab; }
   #office:active { cursor:grabbing; }
   #office canvas { position:absolute; inset:0; width:100% !important; height:100% !important; display:block; }
-  #bubbles, #hotspots { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
+  #bubbles { position:absolute; inset:0; pointer-events:none; overflow:hidden; }
   #notice { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); text-align:center; padding:24px; font-size:16px; }
   #notice small { display:block; margin-top:8px; color:var(--bad); font-size:13px; word-break:break-word; }
 
   /* HUD */
   .hud { position:absolute; z-index:5; pointer-events:none; }
   .hud > * { pointer-events:auto; }
-  .brand { top:12px; left:14px; line-height:1; }
-  .t1 { display:block; font-size:clamp(20px,3.2vw,34px); font-weight:900; color:#fff; letter-spacing:-.01em;
-        -webkit-text-stroke:6px var(--blue2); paint-order:stroke fill; text-shadow:0 4px 0 var(--blue2), 0 8px 12px rgba(23,65,184,.25); }
-  .t2 { display:inline-block; margin-top:7px; padding:1px 16px 5px; border-radius:16px; border:3px solid #fff;
-        background:linear-gradient(180deg,#2d74ff,#1741b8); box-shadow:0 0 0 3px #1b3f9e, 0 8px 14px rgba(23,65,184,.3);
-        font-size:clamp(18px,2.8vw,30px); font-weight:900; color:#fff; -webkit-text-stroke:4px #12307f; paint-order:stroke fill; }
-  .t2 b { color:var(--yellow); }
   .tools { top:12px; right:14px; display:flex; gap:8px; align-items:center; flex-wrap:wrap; justify-content:flex-end; }
   .pillBar { background:rgba(255,255,255,.92); border:1px solid var(--line); border-radius:99px; padding:5px 12px; font-size:12px; font-weight:700; box-shadow:0 2px 8px rgba(31,64,128,.1); }
   .pillBar.live i { display:inline-block; width:8px; height:8px; border-radius:50%; background:var(--ok); margin-right:5px; }
@@ -51,6 +44,11 @@
   .roomtag small { display:block; color:#64748b; font-size:.85em; }
   .roomtag.on { background:#fff; box-shadow:0 0 0 2px var(--rc), 0 4px 12px rgba(20,40,90,.25); }
   .roomtag.dim { opacity:.75; }
+  .roomtag.click { pointer-events:auto; cursor:pointer; }
+  .roomtag.click small { color:var(--blue); font-weight:700; }
+  .roomtag.click.hover { transform-origin:center bottom; box-shadow:0 0 0 2px var(--rc), 0 6px 16px rgba(20,40,90,.3); }
+  .roomtag .badge { font-style:normal; background:var(--yellow); color:var(--ink); border-radius:99px; padding:0 7px; margin-left:6px; font-size:.9em; }
+  .roomtag .badge:empty { display:none; }
 
   /* bubble & tag di atas karakter */
   .bubble, .jobtag { position:absolute; left:0; top:0; will-change:transform; white-space:nowrap; }
@@ -63,15 +61,6 @@
   .bubble.mini { padding:2px 8px; border-radius:99px; box-shadow:0 2px 6px rgba(20,40,90,.16); font-size:clamp(9px,.95vw,11px); opacity:.92; }
   .bubble.mini::after, .bubble.mini span { display:none; }
   .jobtag { background:var(--blue); color:#fff; border-radius:99px; padding:1px 8px; font-size:clamp(9px,.95vw,11px); font-weight:700; box-shadow:0 2px 6px rgba(20,40,90,.25); }
-
-  /* tombol di meja agen */
-  .hs { position:absolute; left:0; top:0; pointer-events:auto; will-change:transform; cursor:pointer; border:0; font:800 14px var(--font); color:#fff;
-        padding:9px 16px; border-radius:99px; white-space:nowrap; background:linear-gradient(180deg,#2d74ff,#1741b8); box-shadow:0 0 0 3px #fff, 0 8px 18px rgba(23,65,184,.4); }
-  .hs.green { background:linear-gradient(180deg,#22c55e,#15803d); box-shadow:0 0 0 3px #fff, 0 8px 18px rgba(21,128,61,.4); }
-  .hs small { display:inline-block; min-width:20px; margin-left:6px; padding:0 6px; border-radius:99px; background:var(--yellow); color:var(--ink); font-size:12px; }
-  .hs small:empty { display:none; }
-  .hs:hover { filter:brightness(1.08); }
-  .hs span.pulse { display:inline-block; }
 
   /* panel alur */
   #flowPanel { position:absolute; z-index:6; top:64px; right:14px; width:min(360px,calc(100vw - 28px)); max-height:60vh; overflow:auto;
@@ -128,7 +117,6 @@
     .bubble { max-width:150px; font-size:10px; padding:3px 8px 4px; }
     .bubble span { white-space:normal; }
     .roomtag small { display:none; }
-    .hs { font-size:12px; padding:7px 12px; }
     #flowPanel { top:108px; }
   }
 </style>
@@ -136,16 +124,7 @@
 <body>
   <div id="office">
     <div id="bubbles"></div>
-    <div id="hotspots">
-      <button class="hs" id="hsUpload" aria-label="Buka meja Aoi untuk mengunggah video atau link">⬆ Unggah video / link <small id="hsUploadN"></small></button>
-      <button class="hs green" id="hsResults" aria-label="Buka meja Miu untuk melihat hasil klip">▶ Hasil klip <small id="hsResultsN"></small></button>
-    </div>
     <div id="notice">Memuat kantor 3D…</div>
-  </div>
-
-  <div class="hud brand">
-    <span class="t1">Virtual Office</span>
-    <span class="t2"><b>AI</b> Agent</span>
   </div>
   <div class="hud tools">
     <span class="pillBar live" id="chipLive"><i></i> LIVE</span>
@@ -212,8 +191,7 @@ const enc = encodeURIComponent;
 // ---------- Modal ----------
 const open = (id) => { $(id).hidden = false; };
 const closeAll = () => document.querySelectorAll(".modal").forEach((m) => (m.hidden = true));
-$("hsUpload").onclick = () => open("modalUpload");
-$("hsResults").onclick = () => open("modalResults");
+window.openPanel = (k) => open(k === "upload" ? "modalUpload" : "modalResults");
 document.querySelectorAll(".modal").forEach((m) =>
   m.addEventListener("click", (e) => { if (e.target === m || e.target.closest("[data-close]")) m.hidden = true; }),
 );

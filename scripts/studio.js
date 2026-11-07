@@ -204,10 +204,25 @@ const glassSeg = (x1, z1, x2, z2) => {
 });
 
 // karpet tiap ruang
-ROOMS.forEach((r) => {
+const pickables = [];
+ROOMS.forEach((r, i) => {
   const z = r.north ? -3.5 : 3.8;
-  box(5.7, 0.03, r.north ? 3.7 : 3.4, M(r.rug), r.xc, 0.015, z, world, false);
+  const depth = r.north ? 3.7 : 3.4;
+  // material karpet sendiri agar bisa menyala saat kursor di atas ruang
+  r.rugMat = new THREE.MeshStandardMaterial({ color: r.rug, roughness: 0.9, emissive: r.color, emissiveIntensity: 0 });
+  const rug = new THREE.Mesh(new THREE.BoxGeometry(5.7, 0.03, depth), r.rugMat);
+  rug.position.set(r.xc, 0.015, z);
+  rug.receiveShadow = true;
+  world.add(rug);
   box(5.7, 0.035, 0.1, M(r.color), r.xc, 0.018, z - (r.north ? 1.85 : 1.7), world, false);
+  // area klik tak terlihat: ruang Aoi (unggah) dan ruang Miu (hasil)
+  if (i === 0 || i === 4) {
+    const area = new THREE.Mesh(new THREE.BoxGeometry(5.7, 2.2, depth), new THREE.MeshBasicMaterial({ visible: false }));
+    area.position.set(r.xc, 1.1, z);
+    area.userData.room = i;
+    world.add(area);
+    pickables.push(area);
+  }
 });
 box(6.0, 0.03, 3.4, M(0xdfe6f1), -0.1, 0.015, 3.8, world, false); // karpet lounge
 
@@ -922,6 +937,40 @@ window.studioOnline = (ok) => {
   }
 };
 
+// ---------- Klik ruang (raycast) ----------
+let hoverRoom = -1;
+{
+  const dom = renderer.domElement;
+  const ray = new THREE.Raycaster();
+  const ndc = new THREE.Vector2();
+  const pick = (ev) => {
+    const rect = dom.getBoundingClientRect();
+    ndc.set(((ev.clientX - rect.left) / rect.width) * 2 - 1, -((ev.clientY - rect.top) / rect.height) * 2 + 1);
+    ray.setFromCamera(ndc, camera);
+    const hit = ray.intersectObjects(pickables, false)[0];
+    return hit ? hit.object.userData.room : -1;
+  };
+  let down = null;
+  dom.addEventListener("pointermove", (e) => {
+    if (e.buttons) return;
+    hoverRoom = pick(e);
+    dom.style.cursor = hoverRoom >= 0 ? "pointer" : "";
+  });
+  dom.addEventListener("pointerleave", () => {
+    hoverRoom = -1;
+    dom.style.cursor = "";
+  });
+  dom.addEventListener("pointerdown", (e) => {
+    down = [e.clientX, e.clientY];
+  });
+  dom.addEventListener("pointerup", (e) => {
+    if (!down) return;
+    const moved = Math.hypot(e.clientX - down[0], e.clientY - down[1]);
+    down = null;
+    if (moved < 6) openRoom(pick(e)); // seret untuk memutar tidak dihitung klik
+  });
+}
+
 // ---------- Balon ucapan + papan nama ruang ----------
 const bubbleEls = agents.map((a) => {
   const el = document.createElement("div");
@@ -930,11 +979,31 @@ const bubbleEls = agents.map((a) => {
   bubbleLayer.appendChild(el);
   return el;
 });
-const roomTags = ROOMS.map((r) => {
+const ACTIONS = { 0: ["upload", "Klik untuk unggah video"], 4: ["results", "Klik untuk lihat hasil klip"] };
+const openRoom = (i) => {
+  const act = ACTIONS[i];
+  if (act && window.openPanel) window.openPanel(act[0]);
+};
+const roomTags = ROOMS.map((r, i) => {
   const el = document.createElement("div");
   el.className = "roomtag";
   el.style.setProperty("--rc", "#" + r.color.toString(16).padStart(6, "0"));
-  el.innerHTML = `<b>Ruang ${r.name}</b><small>${r.title}</small>`;
+  const act = ACTIONS[i];
+  el.innerHTML = `<b>Ruang ${r.name}<em class="badge"></em></b><small>${act ? act[1] : r.title}</small>`;
+  if (act) {
+    el.classList.add("click");
+    el.setAttribute("role", "button");
+    el.tabIndex = 0;
+    el.addEventListener("click", () => openRoom(i));
+    el.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        openRoom(i);
+      }
+    });
+    el.addEventListener("pointerenter", () => (hoverRoom = i));
+    el.addEventListener("pointerleave", () => (hoverRoom = -1));
+  }
   bubbleLayer.appendChild(el);
   return el;
 });
@@ -1044,8 +1113,6 @@ fit();
 // ---------- Loop ----------
 let last = performance.now();
 let model = buildModel(lastReal);
-// tombol melayang di atas meja Aoi (unggah) dan meja Miu (hasil)
-const HOT = [["hsUpload", ROOMS[0].deskX, 3.2, ROOMS[0].deskZ], ["hsResults", ROOMS[4].deskX, 3.2, ROOMS[4].deskZ]];
 renderer.setAnimationLoop(() => {
   const t = performance.now();
   const dt = Math.min(0.1, (t - last) / 1000);
@@ -1107,18 +1174,19 @@ renderer.setAnimationLoop(() => {
     el.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`;
     if (r) el.classList.toggle("on", model.active.has(i));
   });
-  HOT.forEach(([id, x, y, z]) => {
-    const el = $(id);
-    if (!el) return;
-    const [sx, sy] = project(x, y, z, w, h);
-    el.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -50%)`;
+  // lencana jumlah antrean (ruang Aoi) dan klip jadi (ruang Miu)
+  [[0, model.queue.length], [4, model.clips]].forEach(([i, n]) => {
+    const badge = roomTags[i].querySelector(".badge");
+    const text = n ? String(n) : "";
+    if (badge && badge.textContent !== text) badge.textContent = text;
   });
-  const upN = $("hsUploadN");
-  const resN = $("hsResultsN");
-  const upText = model.queue.length ? String(model.queue.length) : "";
-  const resText = model.clips ? String(model.clips) : "";
-  if (upN && upN.textContent !== upText) upN.textContent = upText;
-  if (resN && resN.textContent !== resText) resN.textContent = resText;
+  // ruang yang bisa diklik menyala saat disorot dan berdenyut halus saat diam
+  [0, 4].forEach((i) => {
+    const r = ROOMS[i];
+    const target = hoverRoom === i ? 0.5 : 0.07 + 0.05 * Math.sin(sec * 2.4 + i);
+    r.rugMat.emissiveIntensity += (target - r.rugMat.emissiveIntensity) * 0.2;
+    roomTags[i].classList.toggle("hover", hoverRoom === i);
+  });
 
   cards.forEach((c) => {
     if (c.flat || !c.job) {
