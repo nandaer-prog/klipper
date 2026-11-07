@@ -1,6 +1,7 @@
 /* eslint-disable @remotion/deterministic-randomness -- kode browser, bukan komposisi Remotion */
 /* global document, window, performance, matchMedia, ResizeObserver, setInterval */
-// Virtual Office AI Agent: kantor 3D isometrik. Karakter berjalan dan bekerja sesuai tahap pipeline.
+// Virtual Office AI Agent: kantor 3D isometrik. Tiap agen punya ruangan sendiri dan
+// berjalan lewat lorong saat bekerja, mengantar video, atau beristirahat.
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 
@@ -9,7 +10,8 @@ const esc = (s) =>
   String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]);
 const short = (s, n = 24) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
 const clean = (f) => short(String(f || "").replace(/\.[a-z0-9]{2,4}$/i, ""), 22);
-const SPEED = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.4 : 1;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+const SPEED = matchMedia("(prefers-reduced-motion: reduce)").matches ? 0.5 : 1;
 
 const host = $("office");
 const bubbleLayer = $("bubbles");
@@ -37,7 +39,7 @@ controls.target.copy(TARGET);
 controls.enableDamping = true;
 controls.enablePan = false;
 controls.minZoom = 0.75;
-controls.maxZoom = 2.4;
+controls.maxZoom = 2.6;
 controls.minPolarAngle = 0.55;
 controls.maxPolarAngle = 1.2;
 controls.minAzimuthAngle = Math.PI / 4 - 0.55;
@@ -79,10 +81,9 @@ const cyl = (rt, rb, h, material, x, y, z, parent = world, seg = 16) => {
   parent.add(m);
   return m;
 };
-const sph = (r, material, x, y, z, parent = world, sx = 1, sy = 1, sz = 1) => {
+const sph = (r, material, x, y, z, parent = world) => {
   const m = new THREE.Mesh(new THREE.SphereGeometry(r, 16, 12), material);
   m.position.set(x, y, z);
-  m.scale.set(sx, sy, sz);
   m.castShadow = true;
   parent.add(m);
   return m;
@@ -120,7 +121,6 @@ box(20.9, 0.08, 12.9, M(0xcdb892), 0, -0.52, 0);
   f.receiveShadow = true;
   world.add(f);
 }
-// dinding belakang (z=-6) dan kiri (x=-10)
 const WALL = M(0xf4efe6);
 const TRIM = M(0xd9c6a2);
 box(20.4, 2.3, 0.3, WALL, 0, 1.15, -6.15);
@@ -131,35 +131,88 @@ box(0.34, 0.12, 12.4, TRIM, -10.15, 2.34, 0);
 box(0.34, 0.5, 12.4, TRIM, -10.15, 0.25, 0);
 {
   const glass = M(0xbfe3f5, { transparent: true, opacity: 0.55, roughness: 0.1 });
-  [-6, 0, 6].forEach((x) => {
+  [-6.7, -0.1, 6.6].forEach((x) => {
     box(3.2, 1.1, 0.06, glass, x, 1.45, -5.97, world, false);
     box(3.3, 0.06, 0.1, M(0xffffff), x, 2.02, -5.96, world, false);
     box(3.3, 0.06, 0.1, M(0xffffff), x, 0.9, -5.96, world, false);
     box(0.06, 1.1, 0.1, M(0xffffff), x, 1.45, -5.96, world, false);
   });
-  [-3.5, 2.5].forEach((z) => {
+  [-3.5, 3.5].forEach((z) => {
     box(0.06, 1.1, 3.0, glass, -9.97, 1.45, z, world, false);
     box(0.1, 0.06, 3.1, M(0xffffff), -9.96, 2.02, z, world, false);
   });
 }
 
-// ---------- Perabot ----------
-const GLASS = new THREE.MeshPhysicalMaterial({ color: 0xcfeaf5, transparent: true, opacity: 0.26, roughness: 0.05, side: THREE.DoubleSide });
+// ---------- Denah ruangan ----------
+// Lorong horizontal di z = -1.0 .. 1.5. Tiga ruang di utara, dua ruang + lounge di selatan.
+const ROOMS = [
+  { name: "Aoi", title: "Antrean & Unduh", xc: -6.7, north: true, door: -5.3, deskX: -8.1, color: 0xf59e0b, rug: 0xf8e2b5 },
+  { name: "Sora", title: "Transkripsi", xc: -0.1, north: true, door: 1.3, deskX: -1.5, color: 0x14b8a6, rug: 0xc9ece8 },
+  { name: "Ren", title: "Claude Editor", xc: 6.6, north: true, door: 8.0, deskX: 5.2, color: 0x8b5cf6, rug: 0xddd2f7 },
+  { name: "Kai", title: "Render", xc: 6.6, north: false, door: 8.0, deskX: 5.2, color: 0xef4444, rug: 0xf6cdcd },
+  { name: "Miu", title: "Hasil Klip", xc: -6.7, north: false, door: -8.1, deskX: -5.3, color: 0x22c55e, rug: 0xcdeed8 },
+];
+ROOMS.forEach((r) => {
+  r.deskZ = r.north ? -2.6 : 4.7;
+  r.seatZ = r.north ? -3.7 : 3.6;
+  r.innerZ = r.north ? -2.4 : 2.5;
+});
+const STATION_COLORS = ROOMS.map((r) => r.color);
+
+const GLASS = new THREE.MeshPhysicalMaterial({ color: 0xcfeaf5, transparent: true, opacity: 0.24, roughness: 0.05, side: THREE.DoubleSide });
 const ALU = M(0xdfe3ea);
-const glassPanel = (w, d, x, z) => {
-  const horizontal = w > d;
-  box(w, 1.8, d, GLASS, x, 0.9, z, world, false);
-  box(w, 0.06, d, ALU, x, 1.82, z);
-  box(w, 0.06, d, ALU, x, 0.03, z);
-  const n = Math.max(1, Math.round((horizontal ? w : d) / 1.8));
-  for (let i = 0; i <= n; i++) {
-    const t = (i / n - 0.5) * (horizontal ? w : d);
-    box(horizontal ? 0.06 : d + 0.0, 1.8, horizontal ? 0.06 : 0.06, ALU, horizontal ? x + t : x, 0.9, horizontal ? z : z + t);
+// segmen kaca sejajar sumbu: dari (x1,z1) ke (x2,z2)
+const glassSeg = (x1, z1, x2, z2) => {
+  const horizontal = Math.abs(z2 - z1) < 1e-6;
+  const len = Math.abs(horizontal ? x2 - x1 : z2 - z1);
+  const cx = (x1 + x2) / 2;
+  const cz = (z1 + z2) / 2;
+  box(horizontal ? len : 0.07, 1.9, horizontal ? 0.07 : len, GLASS, cx, 0.95, cz, world, false);
+  box(horizontal ? len : 0.1, 0.07, horizontal ? 0.1 : len, ALU, cx, 1.92, cz);
+  box(horizontal ? len : 0.1, 0.08, horizontal ? 0.1 : len, ALU, cx, 0.05, cz);
+  [[x1, z1], [x2, z2]].forEach(([px, pz]) => box(0.1, 1.95, 0.1, ALU, px, 0.97, pz));
+  const mid = Math.floor(len / 2.2);
+  for (let i = 1; i <= mid; i++) {
+    const t = i / (mid + 1);
+    const px = horizontal ? x1 + (x2 - x1) * t : x1;
+    const pz = horizontal ? z1 : z1 + (z2 - z1) * t;
+    box(0.05, 1.9, 0.05, ALU, px, 0.95, pz, world, false);
   }
 };
+// dinding lorong sisi utara (z=-1.0) dengan celah pintu
+{
+  const doors = ROOMS.filter((r) => r.north).map((r) => r.door).sort((a, b) => a - b);
+  let x = -10;
+  doors.forEach((d) => {
+    glassSeg(x, -1.0, d - 0.8, -1.0);
+    x = d + 0.8;
+  });
+  glassSeg(x, -1.0, 10, -1.0);
+}
+// dinding lorong sisi selatan (z=1.5): kamar Miu & Kai, lounge terbuka
+{
+  const doors = ROOMS.filter((r) => !r.north).map((r) => r.door).sort((a, b) => a - b);
+  glassSeg(-10, 1.5, doors[0] - 0.8, 1.5);
+  glassSeg(doors[0] + 0.8, 1.5, -3.4, 1.5);
+  glassSeg(3.2, 1.5, doors[1] - 0.8, 1.5);
+  glassSeg(doors[1] + 0.8, 1.5, 10, 1.5);
+}
+// dinding pemisah antar ruang
+[-3.4, 3.2].forEach((x) => {
+  glassSeg(x, -6, x, -1.0);
+  glassSeg(x, 1.5, x, 6);
+});
 
+// karpet tiap ruang
+ROOMS.forEach((r) => {
+  const z = r.north ? -3.5 : 3.8;
+  box(5.7, 0.03, r.north ? 3.7 : 3.4, M(r.rug), r.xc, 0.015, z, world, false);
+  box(5.7, 0.035, 0.1, M(r.color), r.xc, 0.018, z - (r.north ? 1.85 : 1.7), world, false);
+});
+box(6.0, 0.03, 3.4, M(0xdfe6f1), -0.1, 0.015, 3.8, world, false); // karpet lounge
+
+// ---------- Perabot ----------
 const screenMats = [[], [], [], [], []];
-const STATION_COLORS = [0xf59e0b, 0x14b8a6, 0x8b5cf6, 0xef4444, 0x22c55e];
 
 const monitor = (g, x, z, si, w = 0.74) => {
   box(0.1, 0.22, 0.1, M(0x4b5563), x, 0.86, z, g);
@@ -225,33 +278,47 @@ const plant = (x, z, s = 1) => {
   return g;
 };
 
-// stasiun kerja
-const DESKS = [
-  { x: -6, z: 2.5, mon: 1 },
-  { x: -2, z: 1.5, mon: 2 },
-  { x: 5.5, z: -3.2, mon: 2 },
-  { x: 6.5, z: 3.0, mon: 2 },
-  { x: -6.5, z: -3.5, mon: 1 },
-];
-DESKS.forEach((d, i) => {
-  desk(d.x, d.z, i, d.mon);
+const shelfUnit = (x, z, w = 1.6, rot = 0) => {
+  const g = new THREE.Group();
+  g.position.set(x, 0, z);
+  g.rotation.y = rot;
+  world.add(g);
+  box(w, 1.5, 0.42, M(0xd9b98a), 0, 0.75, 0, g);
+  let s = x * 7 + z * 13 + 3;
+  const rnd = () => (s = (Math.imul(Math.floor(s * 1000) | 1, 1664525) + 1013904223) >>> 0) / 4294967296;
+  const cols = [0xd94f4f, 0x4f7bd9, 0xe6b422, 0x4fb36b, 0x8e5bd0, 0xf2f2f2];
+  [0.32, 0.75, 1.18].forEach((by) => {
+    box(w - 0.1, 0.04, 0.38, M(0xb8935f), 0, by - 0.1, 0.02, g, false);
+    for (let bx = -w / 2 + 0.12; bx < w / 2 - 0.1; bx += 0.14) {
+      const bh = 0.24 + rnd() * 0.2;
+      box(0.1, bh, 0.26, M(cols[Math.floor(rnd() * 6)]), bx, by - 0.08 + bh / 2, 0.06, g, false);
+    }
+  });
+};
+
+// meja + kursi di tiap ruang
+const DESKS = ROOMS.map((r, i) => {
+  desk(r.deskX, r.deskZ, i, i === 0 || i === 4 ? 1 : 2);
+  return { x: r.deskX, z: r.deskZ };
 });
+const chairs = ROOMS.map((r) => {
+  const c = chair(r.deskX, r.seatZ - 0.05, Math.PI);
+  return c;
+});
+// perabot ruang
+shelfUnit(-8.1, -5.65, 1.9);
+shelfUnit(-1.5, -5.65, 1.9);
+shelfUnit(5.2, -5.65, 1.9);
+shelfUnit(6.4, 1.95, 1.4, Math.PI);
+shelfUnit(-6.1, 1.95, 1.4, Math.PI);
+box(0.5, 0.35, 0.4, M(0xffffff), -9.1, 0.97, -5.6);
+[[-3.95, -5.35, 1.2], [3.7, -5.35, 1.2], [9.4, -5.35, 1.3], [9.4, 5.3, 1.4], [-9.4, 5.3, 1.4], [-3.0, 5.4, 1.1], [2.8, 5.4, 1.1], [9.5, -1.8, 0.9], [-9.4, -1.6, 0.9]].forEach(([x, z, s]) => plant(x, z, s));
 
-// ruang kaca Claude Editor
-glassPanel(5.4, 0.08, 7.3, -1.2);
-glassPanel(0.08, 4.8, 3.0, -3.6);
-box(0.12, 1.8, 0.12, ALU, 4.6, 0.9, -1.2);
-box(0.12, 1.8, 0.12, ALU, 3.0, 0.9, -1.2);
-box(2.6, 0.04, 1.6, M(0xdfe9f5), 7.6, 0.02, -3.6, world, false); // karpet ruang
-
-// sekat kain
-box(0.1, 0.95, 1.6, M(0x93a98a), -4.0, 0.48, 1.6);
-box(0.1, 0.95, 1.6, M(0x93a98a), 2.2, 0.48, 1.6);
-
-// sofa area istirahat
+// lounge: sofa + meja kopi
 {
   const g = new THREE.Group();
-  g.position.set(0, 0, -5.1);
+  g.position.set(-0.1, 0, 5.2);
+  g.rotation.y = Math.PI;
   world.add(g);
   const sofa = M(0x7f9a70);
   box(2.8, 0.45, 1.0, sofa, 0, 0.25, 0, g);
@@ -260,64 +327,27 @@ box(0.1, 0.95, 1.6, M(0x93a98a), 2.2, 0.48, 1.6);
   box(0.3, 0.6, 1.0, M(0x6f8a62), 1.4, 0.45, 0, g);
   box(0.5, 0.4, 0.14, M(0xf4c95d), -0.7, 0.62, -0.2, g);
   box(0.5, 0.4, 0.14, M(0xe58f6b), 0.7, 0.62, -0.2, g);
-  cyl(0.55, 0.55, 0.05, M(0xecd2a8), 0, 0.42, 1.55, world);
-  cyl(0.06, 0.06, 0.4, M(0x8a6a3c), 0, 0.2, -3.55, world);
-  box(0.9, 0.05, 0.6, M(0xecd2a8), 0, 0.43, -3.5, world);
+  cyl(0.55, 0.55, 0.05, M(0xecd2a8), -0.1, 0.42, 4.0);
+  cyl(0.06, 0.06, 0.4, M(0x8a6a3c), -0.1, 0.2, 4.0);
+  box(0.4, 0.1, 0.3, M(0xf59e0b), -0.15, 0.5, 4.0);
+  box(0.9, 0.75, 0.55, M(0xd9b98a), 2.2, 0.38, 5.55); // kabinet kopi
+  box(0.4, 0.4, 0.35, M(0x4b5563), 2.2, 0.96, 5.55);
 }
-// meja bundar + bangku
-cyl(0.85, 0.85, 0.07, M(0xecd2a8), 1.8, 0.72, 3.5);
-cyl(0.1, 0.1, 0.7, M(0x8a6a3c), 1.8, 0.35, 3.5);
-[[0.9, 3.0], [2.7, 3.0], [1.8, 2.4]].forEach(([sx, sz]) => {
-  cyl(0.24, 0.24, 0.3, M(0x2a2e38), sx, 0.2, sz);
-});
-box(0.5, 0.03, 0.4, M(0xffffff), 1.5, 0.77, 3.4);
-box(0.3, 0.1, 0.3, M(0xf59e0b), 2.1, 0.8, 3.6);
-// rak buku dan lemari
-{
-  const g = new THREE.Group();
-  g.position.set(-3, 0, -5.7);
-  world.add(g);
-  box(2.4, 1.6, 0.45, M(0xd9b98a), 0, 0.8, 0, g);
-  let s = 3;
-  const rnd = () => (s = (Math.imul(s, 1664525) + 1013904223) >>> 0) / 4294967296;
-  const bookCols = [0xd94f4f, 0x4f7bd9, 0xe6b422, 0x4fb36b, 0x8e5bd0, 0xf2f2f2];
-  [0.35, 0.8, 1.25].forEach((by) => {
-    box(2.3, 0.04, 0.4, M(0xb8935f), 0, by - 0.1, 0.02, g, false);
-    for (let bx = -1.05; bx < 1.0; bx += 0.14) {
-      const bh = 0.25 + rnd() * 0.2;
-      box(0.1, bh, 0.28, M(bookCols[Math.floor(rnd() * 6)]), bx, by - 0.08 + bh / 2, 0.05, g, false);
-    }
-  });
-}
-box(1.8, 0.75, 0.55, M(0xd9b98a), 4.5, 0.38, 5.6);
-box(1.7, 0.04, 0.5, M(0xecd2a8), 4.5, 0.77, 5.6);
-box(0.5, 0.35, 0.4, M(0xffffff), 4.1, 0.97, 5.6);
-// printer
-box(0.9, 0.5, 0.6, M(0xe5e8ee), 9.2, 0.25, 4.0);
-box(0.7, 0.08, 0.4, M(0x4b5563), 9.2, 0.54, 4.0);
-
-[[-9.3, -5.2, 1.6], [-9.3, 5.4, 1.3], [9.4, 5.3, 1.4], [9.4, -5.3, 1.5], [2.9, 5.4, 1], [-0.9, -5.6, 1.1], [3.6, -1.9, 0.9], [-4.6, -5.4, 1]].forEach(([x, z, s]) => plant(x, z, s));
-
-// kursi di tiap meja kerja (di sisi utara meja)
-const SEATS = [
-  { x: -6, z: 1.4 },
-  { x: -2, z: 0.4 },
-  { x: 5.5, z: -4.3 },
-  { x: 6.5, z: 1.9 },
-  { x: -6.5, z: -4.6 },
-];
-SEATS.forEach((s) => chair(s.x, s.z - 0.05, Math.PI));
-chair(-4.2, 1.0, Math.PI * 0.5);
 
 // ---------- Jalur jalan ----------
 const NODES = {
-  A: [-8.2, -0.5], B: [-6, -0.5], C: [-4, -0.5], D: [-2, -0.5], E: [-0.2, -0.5], F: [3.8, -0.5], G: [6.5, -0.5], H: [8.8, -0.5],
-  R1: [3.8, -2.4], R2: [3.6, -4.4], P: [-8.2, -4.6],
-  W: [-8.2, 5.0], FZ: [-3, 5.0], V2: [-0.2, 5.0], Y: [3.5, 5.0], X: [8.8, 5.0],
+  Ls: [-9.4, 0.25], K1: [-8.1, 0.25], K2: [-5.3, 0.25], K3: [-0.1, 0.25], K4: [1.3, 0.25], K5: [8.0, 0.25], Le: [9.4, 0.25],
+  N1a: [-5.3, -2.4], N1b: [-5.3, -3.7],
+  N2a: [1.3, -2.4], N2b: [1.3, -3.7],
+  N3a: [8.0, -2.4], N3b: [8.0, -3.7],
+  S4a: [8.0, 2.5], S4b: [5.2, 2.5],
+  S5a: [-8.1, 2.5], S5b: [-5.3, 2.5],
+  LA: [-0.1, 2.6],
 };
 const EDGES = [
-  ["A", "B"], ["B", "C"], ["C", "D"], ["D", "E"], ["E", "F"], ["F", "G"], ["G", "H"], ["F", "R1"], ["R1", "R2"],
-  ["A", "P"], ["A", "W"], ["W", "FZ"], ["FZ", "V2"], ["V2", "Y"], ["Y", "X"], ["H", "X"], ["E", "V2"],
+  ["Ls", "K1"], ["K1", "K2"], ["K2", "K3"], ["K3", "K4"], ["K4", "K5"], ["K5", "Le"],
+  ["K2", "N1a"], ["N1a", "N1b"], ["K4", "N2a"], ["N2a", "N2b"], ["K5", "N3a"], ["N3a", "N3b"],
+  ["K5", "S4a"], ["S4a", "S4b"], ["K1", "S5a"], ["S5a", "S5b"], ["K3", "LA"],
 ];
 const ADJ = {};
 EDGES.forEach(([a, b]) => {
@@ -328,7 +358,7 @@ EDGES.forEach(([a, b]) => {
 const nearestNode = (x, z) =>
   Object.keys(NODES).reduce(
     (best, k) => (Math.hypot(NODES[k][0] - x, NODES[k][1] - z) < Math.hypot(NODES[best][0] - x, NODES[best][1] - z) ? k : best),
-    "A",
+    "K3",
   );
 const dijkstra = (a, b) => {
   const dist = {};
@@ -362,19 +392,25 @@ const route = (x, z, to) => {
   return pts;
 };
 
-const STATIONS = [
-  { name: "Antrean & Unduh", seat: { ...SEATS[0], via: "B" }, visit: { x: -4.7, z: 1.0, via: "B" } },
-  { name: "Transkripsi", seat: { ...SEATS[1], via: "D" }, visit: { x: -0.9, z: 0.3, via: "D" } },
-  { name: "Claude Editor", seat: { ...SEATS[2], via: "R2" }, visit: { x: 3.8, z: -3.6, via: "R2" } },
-  { name: "Render", seat: { ...SEATS[3], via: "G" }, visit: { x: 7.9, z: 1.5, via: "G" } },
-  { name: "Hasil Klip", seat: { ...SEATS[4], via: "P" }, visit: { x: -8.2, z: -3.4, via: "A" } },
+const ROOM_NODES = [
+  { row: "N1b", inner: "N1a" },
+  { row: "N2b", inner: "N2a" },
+  { row: "N3b", inner: "N3a" },
+  { row: "S4b", inner: "S4a" },
+  { row: "S5b", inner: "S5a" },
 ];
-const SPOTS = [
-  { x: 0, z: -2.4, via: "E" },
-  { x: -0.2, z: 3.4, via: "E" },
-  { x: 8.8, z: 2.0, via: "H" },
-  { x: -3.5, z: -3.6, via: "C" },
-  { x: -3, z: 4.2, via: "FZ" },
+const STATIONS = ROOMS.map((r, i) => ({
+  name: r.title,
+  room: r,
+  seat: { x: r.deskX, z: r.seatZ, via: ROOM_NODES[i].row },
+  visit: { x: NODES[ROOM_NODES[i].inner][0], z: NODES[ROOM_NODES[i].inner][1], via: ROOM_NODES[i].inner },
+  spot: r.north ? { x: r.door, z: -4.9, via: ROOM_NODES[i].row } : { x: r.door, z: 3.9, via: ROOM_NODES[i].inner },
+}));
+const GLOBAL_SPOTS = [
+  { x: -1.8, z: 3.0, via: "LA" },
+  { x: 1.6, z: 3.0, via: "LA" },
+  { x: 3.5, z: 0.25, via: "K4" },
+  { x: -3.0, z: 0.25, via: "K3" },
 ];
 
 // ---------- Karakter ----------
@@ -389,14 +425,17 @@ const DEFS = [
 
 const buildAgent = (d) => {
   const root = new THREE.Group();
-  const body = new THREE.Group();
+  const body = new THREE.Group(); // pinggul: berputar, miring, naik-turun
   root.add(body);
   const dark = M(0x2d3550);
-  const torso = box(0.46, 0.56, 0.28, M(d.shirt), 0, 0.92, 0, body);
-  box(0.18, 0.2, 0.02, M(0xffffff), 0, 0.95, 0.15, body, false);
+  const torso = new THREE.Group();
+  torso.position.set(0, 0.62, 0);
+  body.add(torso);
+  box(0.46, 0.56, 0.28, M(d.shirt), 0, 0.3, 0, torso);
+  box(0.18, 0.2, 0.02, M(0xffffff), 0, 0.33, 0.15, torso, false);
   const head = new THREE.Group();
-  head.position.set(0, 1.4, 0);
-  body.add(head);
+  head.position.set(0, 0.8, 0);
+  torso.add(head);
   sph(0.21, M(d.skin), 0, 0, 0, head);
   const hair = new THREE.Mesh(new THREE.SphereGeometry(0.225, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), M(d.hair));
   hair.position.set(0, 0.02, -0.01);
@@ -419,42 +458,51 @@ const buildAgent = (d) => {
   };
   const arm = (sx) => {
     const sh = new THREE.Group();
-    sh.position.set(sx * 0.3, 1.16, 0);
-    body.add(sh);
-    box(0.12, 0.5, 0.12, M(d.shirt), 0, -0.24, 0, sh);
-    sph(0.07, M(d.skin), 0, -0.52, 0, sh);
-    return sh;
+    sh.position.set(sx * 0.3, 0.54, 0);
+    torso.add(sh);
+    box(0.12, 0.28, 0.12, M(d.shirt), 0, -0.14, 0, sh);
+    const elbow = new THREE.Group();
+    elbow.position.set(0, -0.28, 0);
+    sh.add(elbow);
+    box(0.11, 0.26, 0.11, M(d.shirt), 0, -0.13, 0, elbow);
+    sph(0.065, M(d.skin), 0, -0.29, 0, elbow);
+    return { sh, elbow };
   };
   const legL = leg(-1);
   const legR = leg(1);
   const armL = arm(-1);
   const armR = arm(1);
   world.add(root);
-  return { root, body, head, legL, legR, armL, armR, torso };
+  return { root, body, torso, head, legL, legR, armL, armR };
 };
 
 const agents = DEFS.map((d, i) => {
-  const home = d.station >= 0 ? STATIONS[d.station].seat : SPOTS[0];
-  const rig = buildAgent(d);
-  const a = {
+  const home = d.station >= 0 ? STATIONS[d.station].seat : GLOBAL_SPOTS[0];
+  return {
     ...d,
     i,
-    rig,
+    rig: buildAgent(d),
     x: home.x,
     z: home.z,
-    face: 0,
+    vx: 0,
+    vz: 0,
+    face: d.station >= 0 ? 0 : Math.PI,
+    phase: 0,
     path: [],
     t: Math.random() * 10,
-    idle: 1 + Math.random() * 4,
+    idle: 3 + Math.random() * 6,
     sit: d.station >= 0 ? 1 : 0,
     wantWork: false,
     working: false,
     walking: false,
+    gesture: 0,
+    lookYaw: 0,
+    lookTarget: 0,
+    lookTimer: 0,
     say: "",
     sayUntil: 0,
     errand: null,
   };
-  return a;
 });
 const courier = agents[5];
 
@@ -462,10 +510,10 @@ const goTo = (a, target) => {
   a.path = route(a.x, a.z, target);
 };
 const pickIdle = (a) => {
-  const spots = [...SPOTS];
-  if (a.station >= 0) spots.push(STATIONS[a.station].seat);
-  const far = spots.filter((s) => Math.hypot(s.x - a.x, s.z - a.z) > 2);
-  goTo(a, far[Math.floor(Math.random() * far.length)]);
+  const own = a.station >= 0 ? [STATIONS[a.station].seat, STATIONS[a.station].spot] : [];
+  const pool = own.length && Math.random() < 0.72 ? own : GLOBAL_SPOTS;
+  const far = pool.filter((s) => Math.hypot(s.x - a.x, s.z - a.z) > 1.2);
+  if (far.length) goTo(a, far[Math.floor(Math.random() * far.length)]);
 };
 const sayFor = (a, text, secs) => {
   a.say = text;
@@ -478,27 +526,29 @@ const requestErrand = (from, to, file) => {
   errands.push({ from, to, file });
   if (errands.length > 4) errands.shift();
 };
-const stepCourier = () => {
+const stepCourier = (dt) => {
   const a = courier;
   if (a.errand) {
-    if (a.path.length === 0) {
+    if (a.path.length === 0 && Math.hypot(a.vx, a.vz) < 0.15) {
       const e = a.errand;
       if (e.phase === 0) {
         sayFor(a, `Mengambil ${clean(e.file)}`, 1.6);
+        a.gesture = 1.2;
         e.phase = 1;
-        e.hold = 1.4;
+        e.hold = 1.5;
       } else if (e.phase === 1) {
-        e.hold -= 0.016;
+        e.hold -= dt;
         if (e.hold <= 0) {
           e.phase = 2;
           goTo(a, STATIONS[e.to].visit);
         }
       } else if (e.phase === 2) {
         sayFor(a, `Menyerahkan ke ${DEFS[e.to].name}`, 2.4);
+        a.gesture = 1.4;
         e.phase = 3;
         e.hold = 2;
       } else {
-        e.hold -= 0.016;
+        e.hold -= dt;
         if (e.hold <= 0) {
           a.errand = null;
           a.idle = 1;
@@ -517,9 +567,18 @@ const stepCourier = () => {
   return false;
 };
 
+const MAX_SPEED = 1.55;
+const STRIDE = 1.25; // jarak per siklus langkah penuh (dua langkah)
+const angDiff = (a, b) => {
+  let d = b - a;
+  while (d > Math.PI) d -= Math.PI * 2;
+  while (d < -Math.PI) d += Math.PI * 2;
+  return d;
+};
+
 const stepAgent = (a, dt, activeSet) => {
   const want = a.station >= 0 && activeSet.has(a.station);
-  const busyCourier = a === courier && stepCourier();
+  const busyCourier = a === courier && stepCourier(dt);
   if (!busyCourier) {
     if (want && !a.wantWork) {
       a.wantWork = true;
@@ -527,67 +586,134 @@ const stepAgent = (a, dt, activeSet) => {
     }
     if (!want && a.wantWork) {
       a.wantWork = false;
-      a.idle = 1.2;
+      a.idle = 1.5;
     }
     if (!want && a.path.length === 0) {
       a.idle -= dt;
       if (a.idle <= 0) {
         pickIdle(a);
-        a.idle = 5 + Math.random() * 8;
+        a.idle = 6 + Math.random() * 10;
       }
     }
   }
-  a.working = want && a.path.length === 0 && !busyCourier;
   a.t += dt;
-  a.walking = a.path.length > 0;
+  if (a.gesture > 0) a.gesture -= dt;
 
-  if (a.walking) {
+  // bangun dulu sebelum berjalan
+  const hasPath = a.path.length > 0;
+  const canMove = hasPath && a.sit < 0.12;
+  const seat = a.station >= 0 ? STATIONS[a.station].seat : null;
+  const atSeat = !!seat && !hasPath && Math.hypot(a.x - seat.x, a.z - seat.z) < 0.15;
+
+  if (canMove) {
     const p = a.path[0];
     const dx = p.x - a.x;
     const dz = p.z - a.z;
-    const d = Math.hypot(dx, dz);
-    const sp = 1.9 * SPEED * dt;
-    if (d <= sp) {
-      a.x = p.x;
-      a.z = p.z;
-      a.path.shift();
-    } else {
-      a.x += (dx / d) * sp;
-      a.z += (dz / d) * sp;
-      const target = Math.atan2(dx, dz);
-      let diff = target - a.face;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      a.face += diff * Math.min(1, dt * 10);
+    const dist = Math.hypot(dx, dz) || 1e-6;
+    const last = a.path.length === 1;
+    let desired = MAX_SPEED * SPEED;
+    if (last) desired = Math.min(desired, 0.3 + dist * 2.4); // melambat saat tiba
+    else {
+      const n = a.path[1];
+      const bx = n.x - p.x;
+      const bz = n.z - p.z;
+      const cos = (dx * bx + dz * bz) / (dist * (Math.hypot(bx, bz) || 1));
+      desired *= 0.62 + 0.38 * Math.max(0, cos); // melambat saat belok tajam
     }
-  } else if (a.working) {
-    // menghadap meja (ke +z)
-    let diff = -a.face;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    a.face += diff * Math.min(1, dt * 8);
+    const k = Math.min(1, dt * 5);
+    a.vx += ((dx / dist) * desired - a.vx) * k;
+    a.vz += ((dz / dist) * desired - a.vz) * k;
+    a.x += a.vx * dt;
+    a.z += a.vz * dt;
+    if (dist < (last ? 0.07 : 0.28)) {
+      if (last) {
+        a.x = p.x;
+        a.z = p.z;
+      }
+      a.path.shift();
+    }
+  } else {
+    const k = Math.min(1, dt * 9);
+    a.vx -= a.vx * k;
+    a.vz -= a.vz * k;
+    a.x += a.vx * dt;
+    a.z += a.vz * dt;
   }
+  const speed = Math.hypot(a.vx, a.vz);
+  a.walking = speed > 0.18;
 
-  // duduk saat bekerja
-  const sitTarget = a.working ? 1 : 0;
-  a.sit += (sitTarget - a.sit) * Math.min(1, dt * 6);
+  // arah hadap: ikuti gerak, atau hadap meja saat duduk
+  let targetFace = a.face;
+  if (speed > 0.25) targetFace = Math.atan2(a.vx, a.vz);
+  else if (atSeat) targetFace = 0;
+  else if (a.errand && a.errand.phase >= 1) targetFace = a.face;
+  const turn = angDiff(a.face, targetFace);
+  a.face += turn * Math.min(1, dt * (speed > 0.25 ? 8 : 6));
 
+  // duduk jika di kursi sendiri (bekerja atau santai)
+  const sitTarget = atSeat ? 1 : 0;
+  a.sit += (sitTarget - a.sit) * Math.min(1, dt * 4.5);
+  a.working = want && atSeat && a.sit > 0.85 && !busyCourier;
+
+  // gerak langkah mengikuti jarak tempuh (tanpa kaki meluncur)
+  a.phase += (speed * dt * Math.PI * 2) / STRIDE;
+
+  // --- pose ---
   const r = a.rig;
-  const ph = a.t * 7 * SPEED;
-  const walkAmt = a.walking ? 1 : 0;
   const s = a.sit;
+  const walkAmt = clamp(speed / MAX_SPEED, 0, 1);
+  const ph = a.phase;
   r.root.position.set(a.x, 0, a.z);
   r.root.rotation.y = a.face;
-  r.body.position.y = -0.3 * s + (a.walking ? Math.abs(Math.sin(ph)) * 0.04 : 0);
-  const swing = Math.sin(ph) * 0.7 * walkAmt;
-  r.legL.hip.rotation.x = -swing * (1 - s) - (Math.PI / 2) * s;
-  r.legR.hip.rotation.x = swing * (1 - s) - (Math.PI / 2) * s;
-  r.legL.knee.rotation.x = Math.max(0, Math.sin(ph + 1)) * 0.5 * walkAmt * (1 - s) + (Math.PI / 2) * s;
-  r.legR.knee.rotation.x = Math.max(0, -Math.sin(ph + 1)) * 0.5 * walkAmt * (1 - s) + (Math.PI / 2) * s;
-  const type = a.working ? Math.sin(a.t * 14) * 0.18 : 0;
-  r.armL.rotation.x = (swing * 0.9) * (1 - s) + (-1.05 + type) * s;
-  r.armR.rotation.x = (-swing * 0.9) * (1 - s) + (-1.05 - type) * s;
-  r.head.rotation.x = a.working ? 0.12 + Math.sin(a.t * 2) * 0.03 : Math.sin(a.t * 1.2) * 0.02;
+
+  const bob = (1 - s) * walkAmt * Math.abs(Math.cos(ph)) * 0.04;
+  r.body.position.y = -0.3 * s + bob;
+  r.body.rotation.y = Math.sin(ph) * 0.12 * walkAmt;
+  r.body.rotation.x = 0.07 * walkAmt * (1 - s) + 0.05 * s * (a.working ? 1 : 0);
+  r.body.rotation.z = Math.sin(ph) * 0.03 * walkAmt;
+  r.torso.rotation.y = -Math.sin(ph) * 0.16 * walkAmt;
+  r.torso.scale.y = 1 + 0.012 * Math.sin(a.t * 2.2);
+
+  const sw = Math.sin(ph) * 0.55 * walkAmt;
+  const flexL = Math.max(0, Math.cos(ph)) * 0.85 * walkAmt;
+  const flexR = Math.max(0, -Math.cos(ph)) * 0.85 * walkAmt;
+  r.legL.hip.rotation.x = (-sw) * (1 - s) + (-Math.PI / 2) * s;
+  r.legR.hip.rotation.x = sw * (1 - s) + (-Math.PI / 2) * s;
+  r.legL.knee.rotation.x = flexL * (1 - s) + (Math.PI / 2) * s;
+  r.legR.knee.rotation.x = flexR * (1 - s) + (Math.PI / 2) * s;
+
+  // lengan: ayun berlawanan dengan kaki, siku menekuk; mengetik saat bekerja
+  const type = a.working ? Math.sin(a.t * 13) * 0.12 : 0;
+  const type2 = a.working ? Math.sin(a.t * 11 + 1.3) * 0.12 : 0;
+  const sitShoulder = -0.55;
+  const sitElbow = a.working ? -1.0 : -0.8;
+  r.armL.sh.rotation.x = Math.sin(ph) * 0.5 * walkAmt * (1 - s) + sitShoulder * s + type * s;
+  r.armR.sh.rotation.x = -Math.sin(ph) * 0.5 * walkAmt * (1 - s) + sitShoulder * s + type2 * s;
+  r.armL.elbow.rotation.x = -(0.2 + 0.45 * walkAmt) * (1 - s) + sitElbow * s + type2 * 0.6 * s;
+  r.armR.elbow.rotation.x = -(0.2 + 0.45 * walkAmt) * (1 - s) + sitElbow * s + type * 0.6 * s;
+  if (a.gesture > 0) {
+    const g = Math.min(1, a.gesture * 2) * (1 - s);
+    r.armR.sh.rotation.x = r.armR.sh.rotation.x * (1 - g) + -1.25 * g;
+    r.armR.elbow.rotation.x = r.armR.elbow.rotation.x * (1 - g) + -0.3 * g;
+  }
+
+  // kepala: melirik ke sekitar saat santai, menunduk saat bekerja
+  a.lookTimer -= dt;
+  if (a.lookTimer <= 0) {
+    a.lookTarget = a.walking || a.working ? 0 : (Math.random() - 0.5) * 1.1;
+    a.lookTimer = 1.5 + Math.random() * 3;
+  }
+  a.lookYaw += (a.lookTarget - a.lookYaw) * Math.min(1, dt * 3);
+  r.head.rotation.y = a.lookYaw - Math.sin(ph) * 0.05 * walkAmt;
+  r.head.rotation.x = a.working ? 0.16 + Math.sin(a.t * 2.4) * 0.03 : Math.sin(a.t * 1.1) * 0.02 - 0.04 * walkAmt;
+
+  // kursi: ditarik keluar saat tidak diduduki
+  if (a.station >= 0) {
+    const c = chairs[a.station];
+    const room = ROOMS[a.station];
+    c.position.z = room.seatZ - 0.05 - 0.42 * (1 - a.sit);
+    c.rotation.y = Math.PI + (1 - a.sit) * (room.north ? 0.5 : -0.5);
+  }
 };
 
 // ---------- Kartu video (job) ----------
@@ -635,21 +761,19 @@ const tagFor = () => {
 
 const syncCards = (m) => {
   const seen = new Set();
-  m.jobs.forEach((j, idx) => {
+  m.jobs.forEach((j) => {
     const info = stageInfo(j.stage);
     if (info.st < 0) return;
     seen.add(j.id);
     let c = cards.get(j.id);
     if (!c) {
       const home = DESKS[1];
-      c = { g: makeCard(hashColor(j.id)), tag: tagFor(), pos: new THREE.Vector3(home.x - 2, 0.9, home.z + 2), rot: 0 };
+      c = { g: makeCard(hashColor(j.id)), tag: tagFor(), pos: new THREE.Vector3(home.x - 1, 0.9, home.z + 2), rot: 0 };
       c.g.position.copy(c.pos);
       cards.set(j.id, c);
     }
     const d = DESKS[info.st];
-    c.target = info.wait
-      ? new THREE.Vector3(d.x - 0.85 - idx * 0.0, 0.84, d.z + 0.22)
-      : new THREE.Vector3(d.x, 1.95, d.z - 0.05);
+    c.target = info.wait ? new THREE.Vector3(d.x - 0.85, 0.84, d.z + 0.22) : new THREE.Vector3(d.x, 1.95, d.z - 0.05);
     c.flat = info.wait;
     c.job = j;
   });
@@ -662,7 +786,7 @@ const syncCards = (m) => {
     }
   });
 
-  // antrean (belum masuk transkripsi): tumpukan berkas di meja Antrean
+  // antrean (belum masuk transkripsi): tumpukan berkas di meja Aoi
   const want = Math.min(m.queue.length, 8);
   while (queueDocs.length < want) {
     const i = queueDocs.length;
@@ -670,11 +794,8 @@ const syncCards = (m) => {
     mesh.rotation.y = ((i * 37) % 11) * 0.04 - 0.2;
     queueDocs.push(mesh);
   }
-  while (queueDocs.length > want) {
-    const mesh = queueDocs.pop();
-    world.remove(mesh);
-  }
-  // hasil: kartu berdiri di rak meja Hasil
+  while (queueDocs.length > want) world.remove(queueDocs.pop());
+  // hasil: kartu berdiri di meja Miu
   const wr = Math.min(m.clips, 12);
   while (resultCards.length < wr) {
     const i = resultCards.length;
@@ -700,10 +821,10 @@ const totals = (s) => ({
 });
 
 const DEMO_NAMES = ["tips_menabung.mp4", "podcast_ep12.mp4", "vlog_bali.mp4"];
-const demoDur = { t: 6, c: 6, r: 8 };
+const demoDur = { t: 7, c: 6, r: 9 };
 const demoPlan = (() => {
   const plan = [];
-  let tEndPrev = 2;
+  let tEndPrev = 3;
   let cEndPrev = 0;
   let rEndPrev = 0;
   DEMO_NAMES.forEach((name) => {
@@ -720,7 +841,7 @@ const demoPlan = (() => {
   });
   return plan;
 })();
-const DEMO_END = demoPlan[demoPlan.length - 1].rE + 3;
+const DEMO_END = demoPlan[demoPlan.length - 1].rE + 4;
 
 const demoState = () => {
   const t = (now() - demo) / 1000;
@@ -734,7 +855,6 @@ const demoState = () => {
     else if (t < p.cE) s.jobs.push({ id, file: p.name, stage: "Claude memilih momen terbaik", detail: "" });
     else if (t < p.rS) s.jobs.push({ id, file: p.name, stage: "Antre render", detail: "" });
     else if (t < p.rE) s.jobs.push({ id, file: p.name, stage: "Render klip", detail: `Klip ${1 + Math.floor(pct(p.rS, p.rE) / 34)} dari 3: ${pct(p.rS, p.rE)}%` });
-    else if (t - p.rE < 0.1) celebrateUntil = now() + 5000;
   });
   if (t > DEMO_END) {
     demo = null;
@@ -779,7 +899,7 @@ const detectMoves = (m) => {
     prevStages.forEach((j, id) => {
       if (!cur.has(id) && stageInfo(j.stage).st === 3) {
         requestErrand(3, 4, j.file);
-        celebrateUntil = Math.max(celebrateUntil, now() + 6000);
+        celebrateUntil = Math.max(celebrateUntil, now() + 7000);
       }
     });
   }
@@ -802,7 +922,7 @@ window.studioOnline = (ok) => {
   }
 };
 
-// ---------- Balon ucapan ----------
+// ---------- Balon ucapan + papan nama ruang ----------
 const bubbleEls = agents.map((a) => {
   const el = document.createElement("div");
   el.className = "bubble";
@@ -810,6 +930,22 @@ const bubbleEls = agents.map((a) => {
   bubbleLayer.appendChild(el);
   return el;
 });
+const roomTags = ROOMS.map((r) => {
+  const el = document.createElement("div");
+  el.className = "roomtag";
+  el.style.setProperty("--rc", "#" + r.color.toString(16).padStart(6, "0"));
+  el.innerHTML = `<b>Ruang ${r.name}</b><small>${r.title}</small>`;
+  bubbleLayer.appendChild(el);
+  return el;
+});
+{
+  const el = document.createElement("div");
+  el.className = "roomtag dim";
+  el.style.setProperty("--rc", "#94a3b8");
+  el.innerHTML = `<b>Lounge</b><small>istirahat</small>`;
+  bubbleLayer.appendChild(el);
+  roomTags.push(el);
+}
 
 const workText = (a, m) => {
   const j = (stg) => m.jobs.find((x) => stageInfo(x.stage).st === stg && !stageInfo(x.stage).wait);
@@ -869,13 +1005,13 @@ const renderFlow = (m) => {
   flowSig = sig;
   $("flow").innerHTML = rows.length
     ? rows.join("")
-    : `<div class="empty">Tidak ada video diproses. Seret video atau tempel link di bawah, atau tekan tombol demo.</div>`;
-  $("flowCount").textContent = `${m.jobs.length} berjalan · ${m.queue.length} antre · ${m.clips} klip jadi`;
+    : `<div class="empty">Tidak ada video diproses. Unggah video di ruang Aoi, atau tekan Demo.</div>`;
+  $("flowCount").textContent = `${m.jobs.length} berjalan · ${m.queue.length} antre · ${m.clips} klip`;
 };
 
 // ---------- Demo ----------
 const setDemoButton = () => {
-  $("btnDemo").textContent = demo ? "■ Hentikan demo" : "▶ Putar demo 3 video";
+  $("btnDemo").textContent = demo ? "■ Hentikan demo" : "▶ Demo 3 video";
 };
 $("btnDemo").addEventListener("click", () => {
   demo = demo ? null : now();
@@ -908,6 +1044,8 @@ fit();
 // ---------- Loop ----------
 let last = performance.now();
 let model = buildModel(lastReal);
+// tombol melayang di atas meja Aoi (unggah) dan meja Miu (hasil)
+const HOT = [["hsUpload", ROOMS[0].deskX, 3.2, ROOMS[0].deskZ], ["hsResults", ROOMS[4].deskX, 3.2, ROOMS[4].deskZ]];
 renderer.setAnimationLoop(() => {
   const t = performance.now();
   const dt = Math.min(0.1, (t - last) / 1000);
@@ -920,16 +1058,14 @@ renderer.setAnimationLoop(() => {
   agents.forEach((a) => stepAgent(a, dt, model.active));
   syncCards(model);
 
-  // layar menyala di stasiun aktif
   screenMats.forEach((arr, si) => {
-    const on = model.active.has(si);
+    const on = model.active.has(si) && agents[si].working;
     arr.forEach((mat, k) => {
       const target = on ? 0.75 + 0.25 * Math.sin(sec * 6 + k * 1.7) : 0.05;
       mat.emissiveIntensity += (target - mat.emissiveIntensity) * 0.15;
     });
   });
 
-  // animasi kartu
   cards.forEach((c) => {
     c.pos.lerp(c.target, Math.min(1, dt * 4));
     const bob = c.flat ? 0 : Math.sin(sec * 3 + c.pos.x) * 0.06;
@@ -960,11 +1096,21 @@ renderer.setAnimationLoop(() => {
     el.lastChild.textContent = text;
     el.classList.toggle("busy", a.working || (a.say && t < a.sayUntil));
   });
-  // tombol di meja: Aoi = unggah video/link, Miu = hasil klip
-  [["hsUpload", DESKS[0]], ["hsResults", DESKS[4]]].forEach(([id, d]) => {
+  roomTags.forEach((el, i) => {
+    const r = ROOMS[i];
+    // ruang utara: di dinding belakang; ruang selatan & lounge: di tepi depan lantai
+    const [sx, sy] = r
+      ? r.north
+        ? project(r.xc, 2.45, -5.7, w, h)
+        : project(r.xc, 0.5, 5.95, w, h)
+      : project(-0.1, 0.5, 5.95, w, h);
+    el.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -100%)`;
+    if (r) el.classList.toggle("on", model.active.has(i));
+  });
+  HOT.forEach(([id, x, y, z]) => {
     const el = $(id);
     if (!el) return;
-    const [sx, sy] = project(d.x, 0.3, d.z + 1.5, w, h);
+    const [sx, sy] = project(x, y, z, w, h);
     el.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -50%)`;
   });
   const upN = $("hsUploadN");
