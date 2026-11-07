@@ -18,7 +18,15 @@ export const ICONS = [
 ] as const;
 export type IconName = (typeof ICONS)[number];
 
-export type BRollType = "icon" | "stat" | "keyword" | "scene";
+/** Ikon aplikasi generik untuk B-roll `card` dan `orbit` (bukan logo merek dagang). */
+export const APP_ICONS = ["chat", "spark", "folder", "sheet", "chip", "ads"] as const;
+export type AppIconName = (typeof APP_ICONS)[number];
+
+/**
+ * icon/stat/keyword/scene: animasi dasar. prompt: layar tiruan prompt AI yang diketik.
+ * card: kartu berita dengan ikon mengambang. orbit: ikon AI di tengah dengan ikon aplikasi mengorbit.
+ */
+export type BRollType = "icon" | "stat" | "keyword" | "scene" | "prompt" | "card" | "orbit";
 
 /** Animasi B-roll yang muncul di waktu tertentu (detik, relatif terhadap awal klip). */
 export type BRollItem = {
@@ -28,6 +36,10 @@ export type BRollItem = {
   text: string;
   sub?: string;
   icon?: IconName;
+  /** Ikon aplikasi untuk `card` (mengambang) dan `orbit` (mengorbit); kosong = bawaan */
+  icons?: AppIconName[];
+  /** Nomor lencana merah pada `prompt` (langkah 1, 2, 3) */
+  badge?: number;
   /** Path footage (relatif terhadap public/) untuk cutaway `scene`; kosong = animasi */
   footage?: string;
 };

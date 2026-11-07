@@ -1,6 +1,7 @@
 import React from "react";
 import { AbsoluteFill, OffthreadVideo, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { anton, montserrat } from "./fonts";
+import { NewsCard, OrbitScreen, PromptScreen } from "./BRollScreens";
 import { Icon } from "./Icons";
 import type { BRollItem } from "./types";
 
@@ -211,6 +212,12 @@ export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ i
           <Sequence key={`${item.at}-${i}`} from={from} durationInFrames={durFrames} layout="none">
             {item.type === "scene" ? (
               <Scene item={item} durFrames={durFrames} accent={accent} />
+            ) : item.type === "prompt" ? (
+              <PromptScreen item={item} durFrames={durFrames} accent={accent} />
+            ) : item.type === "card" ? (
+              <NewsCard item={item} durFrames={durFrames} accent={accent} />
+            ) : item.type === "orbit" ? (
+              <OrbitScreen item={item} durFrames={durFrames} accent={accent} />
             ) : item.type === "stat" ? (
               <Stat item={item} durFrames={durFrames} accent={accent} />
             ) : item.type === "keyword" ? (
