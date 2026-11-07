@@ -15,7 +15,12 @@ const host = $("office");
 const bubbleLayer = $("bubbles");
 
 // ---------- Renderer, kamera, cahaya ----------
-const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+let renderer;
+try {
+  renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+} catch {
+  throw new Error("WebGL tidak aktif di browser ini. Aktifkan 'Hardware acceleration' di pengaturan browser, lalu muat ulang.");
+}
 renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -955,6 +960,20 @@ renderer.setAnimationLoop(() => {
     el.lastChild.textContent = text;
     el.classList.toggle("busy", a.working || (a.say && t < a.sayUntil));
   });
+  // tombol di meja: Aoi = unggah video/link, Miu = hasil klip
+  [["hsUpload", DESKS[0]], ["hsResults", DESKS[4]]].forEach(([id, d]) => {
+    const el = $(id);
+    if (!el) return;
+    const [sx, sy] = project(d.x, 0.3, d.z + 1.5, w, h);
+    el.style.transform = `translate(${sx}px, ${sy}px) translate(-50%, -50%)`;
+  });
+  const upN = $("hsUploadN");
+  const resN = $("hsResultsN");
+  const upText = model.queue.length ? String(model.queue.length) : "";
+  const resText = model.clips ? String(model.clips) : "";
+  if (upN && upN.textContent !== upText) upN.textContent = upText;
+  if (resN && resN.textContent !== resText) resN.textContent = resText;
+
   cards.forEach((c) => {
     if (c.flat || !c.job) {
       c.tag.style.display = "none";

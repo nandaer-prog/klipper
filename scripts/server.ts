@@ -239,6 +239,25 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    // three.js disajikan dari server sendiri (tanpa CDN luar yang bisa terblokir)
+    if (req.method === "GET" && parts[0] === "vendor" && parts[1] === "three") {
+      const rel = parts.slice(2).join("/");
+      if (
+        !/^(build\/three\.module\.js|examples\/jsm\/controls\/OrbitControls\.js)$/.test(rel)
+      ) {
+        res.writeHead(404).end("Tidak ditemukan");
+        return;
+      }
+      const js = await readFile(path.join(ROOT, "node_modules", "three", rel));
+      res
+        .writeHead(200, {
+          "content-type": "text/javascript; charset=utf-8",
+          "cache-control": "public, max-age=86400",
+        })
+        .end(js);
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/studio.js") {
       const js = await readFile(path.join(ROOT, "scripts", "studio.js"));
       res
