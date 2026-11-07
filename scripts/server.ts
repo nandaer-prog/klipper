@@ -236,6 +236,14 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/office3d.js") {
+      const js = await readFile(path.join(ROOT, "scripts", "office3d.js"));
+      res
+        .writeHead(200, { "content-type": "text/javascript; charset=utf-8" })
+        .end(js);
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/api/state") {
       json(res, await getState());
       return;

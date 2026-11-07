@@ -3,42 +3,75 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Clipper</title>
+<title>Kantor Clipper</title>
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+} }
+</script>
 <style>
-  :root { --bg:#0f1115; --card:#181b22; --line:#2a2f3a; --text:#e8eaf0; --muted:#8b93a5; --accent:#4f8cff; --ok:#3ecf8e; --bad:#ff6b6b; }
+  :root {
+    --bg:#f3f5f8; --grid:#e3e8ef; --card:#ffffff; --line:#dde2ea; --text:#18202d; --muted:#667085;
+    --accent:#2563eb; --ok:#16a34a; --bad:#dc2626;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
   * { box-sizing: border-box; }
-  body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,Segoe UI,Arial,sans-serif; }
-  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
-  h1 { font-size: 22px; margin: 0 0 20px; }
-  h2 { font-size: 16px; margin: 32px 0 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing:.04em; }
-  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
-  #drop { border:2px dashed var(--line); border-radius:12px; padding:36px 16px; text-align:center; cursor:pointer; transition:.15s; }
-  #drop.over { border-color:var(--accent); background:#151c2b; }
-  #drop strong { display:block; font-size:17px; margin-bottom:4px; }
+  body {
+    margin:0; color:var(--text); font:15px/1.5 system-ui,Segoe UI,Arial,sans-serif;
+    background-color:var(--bg);
+    background-image: linear-gradient(var(--grid) 1px, transparent 1px), linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  main { max-width: 1040px; margin: 0 auto; padding: 28px 16px 72px; }
+  h1 { font: 700 26px var(--mono); margin: 0 0 4px; letter-spacing:-.01em; }
+  .sub { color:var(--muted); margin:0 0 18px; }
+  h2 { font: 600 13px var(--mono); margin: 32px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing:.06em; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:16px; box-shadow:0 1px 2px rgba(16,24,40,.04); }
+
+  #office { position:relative; height:360px; border-radius:14px; border:1px solid var(--line); background:rgba(255,255,255,.55); overflow:hidden; cursor:grab; }
+  #office:active { cursor:grabbing; }
+  #office canvas { display:block; width:100%; height:100%; }
+  #officeNote { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; color:var(--muted); font:14px var(--mono); text-align:center; padding:20px; pointer-events:none; }
+  .hint { color:var(--muted); font:12px var(--mono); margin-top:8px; }
+
+  #drop { border:2px dashed #c4ccd8; border-radius:14px; padding:34px 16px; text-align:center; cursor:pointer; transition:.15s; background:rgba(255,255,255,.7); }
+  #drop.over { border-color:var(--accent); background:#eef4ff; }
+  #drop strong { display:block; font:700 17px var(--mono); margin-bottom:4px; }
   #drop span { color:var(--muted); }
   .row { display:flex; align-items:center; gap:12px; justify-content:space-between; flex-wrap:wrap; }
   .muted { color:var(--muted); font-size:13px; }
-  .bar { height:8px; background:var(--line); border-radius:99px; overflow:hidden; margin-top:8px; }
+  .bar { height:8px; background:#e8ecf2; border-radius:99px; overflow:hidden; margin-top:8px; }
   .bar > i { display:block; height:100%; width:0; background:var(--accent); transition:width .2s; }
   .list > * + * { margin-top:10px; }
   .clips { display:grid; grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); gap:14px; margin-top:12px; }
   .clip video { width:100%; aspect-ratio:9/16; background:#000; border-radius:10px; }
   .clip .row { margin-top:6px; }
-  a.btn, button.btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:6px 12px; font-size:13px; text-decoration:none; cursor:pointer; }
-  button.ghost { background:transparent; color:var(--bad); border:1px solid var(--line); }
-  .pill { display:inline-block; padding:2px 10px; border-radius:99px; font-size:12px; background:var(--line); color:var(--muted); }
-  .pill.run { background:#1d3a66; color:#9cc2ff; }
+  a.btn, button.btn { background:var(--accent); color:#fff; border:0; border-radius:8px; padding:7px 13px; font:600 13px var(--mono); text-decoration:none; cursor:pointer; }
+  a.btn:hover, button.btn:hover { filter:brightness(1.08); }
+  button.ghost { background:#fff; color:var(--bad); border:1px solid var(--line); }
+  .pill { display:inline-block; padding:2px 10px; border-radius:99px; font:12px var(--mono); background:#eef1f6; color:var(--muted); }
+  .pill.run { background:#dbeafe; color:#1d4ed8; }
   .err { color:var(--bad); font-size:13px; white-space:pre-wrap; word-break:break-word; }
   .empty { color:var(--muted); padding:8px 0; }
-  textarea { width:100%; background:var(--bg); color:var(--text); border:1px solid var(--line); border-radius:8px; padding:10px; font:inherit; resize:vertical; }
+  textarea { width:100%; background:#fff; color:var(--text); border:1px solid var(--line); border-radius:10px; padding:10px; font:inherit; resize:vertical; }
+  textarea:focus { outline:2px solid #bfd3ff; border-color:var(--accent); }
   .dl { border-top:1px solid var(--line); padding-top:10px; }
   .dl .u { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; max-width:60%; }
+  @media (max-width: 600px) { #office { height:300px; } }
 </style>
 </head>
 <body>
 <main>
-  <h1>Clipper</h1>
+  <h1>Kantor Clipper</h1>
+  <p class="sub">Masukkan video, lalu lihat tim kecil Anda bekerja menjadi klip pendek.</p>
 
+  <div id="office" role="img" aria-label="Kantor 3D: lima meja kerja yang menunjukkan tahap pemrosesan video">
+    <div id="officeNote">Memuat kantor 3D…</div>
+  </div>
+  <div class="hint">Seret untuk memutar, gulir untuk zoom. Meja menyala = tahap yang sedang berjalan.</div>
+
+  <h2>Masukkan video</h2>
   <div id="drop">
     <strong>Seret video mentah ke sini</strong>
     <span>atau klik untuk memilih file (.mp4 .mov .mkv .webm .avi .m4v)</span>
@@ -144,6 +177,9 @@ async function refresh() {
   let s;
   try { s = await (await fetch("/api/state")).json(); } catch { return; }
 
+  window.__lastState = s;
+  if (window.updateOffice) window.updateOffice(s);
+
   $("downloads").innerHTML = s.downloads.map((d) => `
     <div class="dl">
       <div class="row"><span class="u" title="${esc(d.url)}">${esc(d.url)}</span>
@@ -206,6 +242,15 @@ $("results").onclick = async (e) => {
 
 refresh();
 setInterval(refresh, 3000);
+
+// Pesan cadangan kalau kantor 3D gagal dimuat (WebGL mati atau CDN tidak terjangkau)
+setTimeout(() => {
+  const note = $("officeNote");
+  if (!note) return;
+  if (window.updateOffice) note.remove();
+  else note.textContent = "Kantor 3D tidak bisa dimuat (WebGL nonaktif atau CDN three.js tidak terjangkau). Dashboard tetap berfungsi.";
+}, 5000);
 </script>
+<script type="module" src="/office3d.js"></script>
 </body>
 </html>
