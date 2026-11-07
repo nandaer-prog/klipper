@@ -2,10 +2,25 @@ import React from "react";
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
 import { anton } from "./fonts";
 
-/** Judul hook di awal klip: meluncur masuk, tampil sebentar, lalu keluar. */
-export const Hook: React.FC<{ title: string; accent: string; seconds?: number }> = ({
+const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+
+/** Pilih satu kata untuk disorot: kata pertama yang ada di emphasis, jika tidak ada kata terpanjang. */
+const pickHighlight = (words: string[], emphasis: string[]): number => {
+  const emph = new Set(emphasis.map(norm).filter(Boolean));
+  const hit = words.findIndex((w) => emph.has(norm(w)));
+  if (hit >= 0) return hit;
+  let best = -1;
+  words.forEach((w, i) => {
+    if (norm(w).length >= 5 && (best < 0 || norm(w).length > norm(words[best]!).length)) best = i;
+  });
+  return best;
+};
+
+/** Judul hook di awal klip: menghentak masuk, satu kata kunci disorot, lalu keluar. */
+export const Hook: React.FC<{ title: string; accent: string; emphasis?: string[]; seconds?: number }> = ({
   title,
   accent,
+  emphasis = [],
   seconds = 3,
 }) => {
   const frame = useCurrentFrame();
@@ -13,14 +28,21 @@ export const Hook: React.FC<{ title: string; accent: string; seconds?: number }>
   const total = seconds * fps;
   if (!title || frame > total + 10) return null;
 
-  const enter = spring({ frame, fps, config: { damping: 13, stiffness: 170 } });
+  // pegas lebih keras dan meluncur dari atas: terasa menghentak
+  const enter = spring({ frame, fps, config: { damping: 10, stiffness: 260 } });
   const exit = interpolate(frame, [total - 8, total], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
-  const y = interpolate(enter, [0, 1], [-260, 0]) - exit * 300;
+  const y = interpolate(enter, [0, 1], [-320, 0]) - exit * 300;
+  const scale = interpolate(enter, [0, 1], [0.7, 1]);
   const size = title.length > 34 ? 66 : title.length > 22 ? 78 : 92;
+
+  const words = title.split(/\s+/).filter(Boolean);
+  const hl = pickHighlight(words, emphasis);
+  // kata sorotan berdenyut halus agar mata tertarik ke sana
+  const pulse = 1 + Math.sin(frame / 4) * 0.04;
 
   return (
     <AbsoluteFill style={{ alignItems: "center", paddingTop: 210 }}>
-      <div style={{ transform: `translateY(${y}px) rotate(${interpolate(enter, [0, 1], [-5, -1.5])}deg)` }}>
+      <div style={{ transform: `translateY(${y}px) scale(${scale}) rotate(${interpolate(enter, [0, 1], [-7, -1.5])}deg)` }}>
         <div
           style={{
             background: accent,
@@ -37,7 +59,28 @@ export const Hook: React.FC<{ title: string; accent: string; seconds?: number }>
             border: "5px solid #111",
           }}
         >
-          {title}
+          {words.map((w, i) =>
+            i === hl ? (
+              <span
+                key={i}
+                style={{
+                  display: "inline-block",
+                  background: "#111",
+                  color: accent,
+                  borderRadius: 14,
+                  padding: "0 14px",
+                  margin: "0 0.14em",
+                  transform: `scale(${pulse})`,
+                }}
+              >
+                {w}
+              </span>
+            ) : (
+              <span key={i} style={{ display: "inline-block", margin: "0 0.14em" }}>
+                {w}
+              </span>
+            ),
+          )}
         </div>
       </div>
     </AbsoluteFill>

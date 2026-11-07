@@ -70,7 +70,7 @@ export const ClipVideo: React.FC<ClipProps> = (props) => {
       />
 
       <BRollLayer items={broll} accent={accent} />
-      {hook ? <Hook title={title} accent={accent} /> : null}
+      {hook ? <Hook title={title} accent={accent} emphasis={emphasis} /> : null}
       <Captions captions={captions} emphasis={emphasis} style={captionStyle} accent={accent} />
 
       {/* bilah progres tipis di atas */}

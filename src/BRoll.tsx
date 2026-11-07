@@ -1,6 +1,7 @@
 import React from "react";
-import { AbsoluteFill, Sequence, interpolate, spring, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, OffthreadVideo, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { anton, montserrat } from "./fonts";
+import { NewsCard, OrbitScreen, PromptScreen } from "./BRollScreens";
 import { Icon } from "./Icons";
 import type { BRollItem } from "./types";
 
@@ -120,6 +121,38 @@ const Scene: React.FC<{ item: BRollItem; durFrames: number; accent: string }> = 
   const { frame, enter, out } = useAnim(durFrames);
   const inOpacity = interpolate(frame, [0, 6], [0, 1], { extrapolateRight: "clamp" });
   const blobs = [0, 1, 2, 3, 4, 5];
+  if (item.footage) {
+    // footage nyata (Pixabay) layar penuh, tanpa suara; headline di bawah
+    return (
+      <AbsoluteFill style={{ opacity: Math.min(out, inOpacity), transform: `scale(${interpolate(enter, [0, 1], [1.08, 1])})` }}>
+        <OffthreadVideo src={staticFile(item.footage)} muted style={{ width: "100%", height: "100%", objectFit: "cover" }} />
+        <AbsoluteFill style={{ background: "linear-gradient(180deg, rgba(0,0,0,.55) 0%, rgba(0,0,0,.05) 45%, rgba(0,0,0,.35) 100%)" }} />
+        <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: 330 }}>
+          <div
+            style={{
+              fontFamily: anton,
+              fontSize: item.text.length > 18 ? 110 : 140,
+              lineHeight: 1.04,
+              textTransform: "uppercase",
+              textAlign: "center",
+              color: "#fff",
+              maxWidth: 900,
+              WebkitTextStroke: "10px #111",
+              paintOrder: "stroke fill",
+              textShadow: "0 10px 0 rgba(0,0,0,.35)",
+            }}
+          >
+            {item.text}
+          </div>
+          {item.sub ? (
+            <div style={{ fontFamily: montserrat, fontWeight: 900, fontSize: 46, color: accent, marginTop: 18, textTransform: "uppercase", textShadow: "0 4px 14px rgba(0,0,0,.7)" }}>
+              {item.sub}
+            </div>
+          ) : null}
+        </AbsoluteFill>
+      </AbsoluteFill>
+    );
+  }
   return (
     <AbsoluteFill style={{ opacity: Math.min(out, inOpacity), transform: `scale(${interpolate(enter, [0, 1], [1.12, 1])})` }}>
       <AbsoluteFill style={{ background: `linear-gradient(${150 + frame * 0.8}deg, #1d0f4f 0%, #6a2cff 45%, ${accent} 130%)` }} />
@@ -179,6 +212,12 @@ export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ i
           <Sequence key={`${item.at}-${i}`} from={from} durationInFrames={durFrames} layout="none">
             {item.type === "scene" ? (
               <Scene item={item} durFrames={durFrames} accent={accent} />
+            ) : item.type === "prompt" ? (
+              <PromptScreen item={item} durFrames={durFrames} accent={accent} />
+            ) : item.type === "card" ? (
+              <NewsCard item={item} durFrames={durFrames} accent={accent} />
+            ) : item.type === "orbit" ? (
+              <OrbitScreen item={item} durFrames={durFrames} accent={accent} />
             ) : item.type === "stat" ? (
               <Stat item={item} durFrames={durFrames} accent={accent} />
             ) : item.type === "keyword" ? (
