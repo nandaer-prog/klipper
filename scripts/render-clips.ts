@@ -16,6 +16,16 @@ import { setJob } from "./status";
 const FPS = 30;
 const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 
+/** Jaga tempo B-roll: buang item yang menumpuk atau kurang dari 1,5 detik dari item sebelumnya. */
+const spaceBroll = (items: ClipProps["broll"]): ClipProps["broll"] => {
+  const out: ClipProps["broll"] = [];
+  for (const it of [...items].sort((a, b) => a.at - b.at)) {
+    const prev = out[out.length - 1];
+    if (!prev || it.at >= prev.at + prev.dur + 1.5) out.push(it);
+  }
+  return out;
+};
+
 const run = (cmd: string, args: string[], timeoutMs = 20 * 60_000) =>
   new Promise<void>((resolve, reject) => {
     const child = spawn(cmd, args, { stdio: ["ignore", "ignore", "pipe"] });
@@ -120,10 +130,11 @@ export const renderClips = async (
     const common = {
       captions: clipCaptions,
       emphasis: clip.emphasis,
-      captionStyle: settings.captionStyle,
+      // CAPTION_STYLE=karaoke (env) menimpa pengaturan dashboard
+      captionStyle: process.env.CAPTION_STYLE === "karaoke" ? ("karaoke" as const) : settings.captionStyle,
       title: clip.title,
       hook: settings.hook,
-      broll: clip.broll,
+      broll: spaceBroll(clip.broll),
       durationInSeconds: dur,
       accent: "#FFE600",
     };

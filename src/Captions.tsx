@@ -66,7 +66,9 @@ export const Captions: React.FC<Props> = ({ captions, emphasis, style, accent })
               ? { ...base, fontWeight: 800, fontSize: 74, color: "#fff", textShadow: "0 4px 18px rgba(0,0,0,.65), 0 2px 4px rgba(0,0,0,.6)" }
               : style === "box"
                 ? { ...base, fontWeight: 900, fontSize: 80, color: "#fff", textShadow: "0 4px 14px rgba(0,0,0,.7)" }
-                : { ...base, fontWeight: 900, fontSize: 92, color: "#fff", WebkitTextStroke: "14px #000", paintOrder: "stroke fill", textShadow: "0 8px 0 rgba(0,0,0,.35)" }
+                : style === "karaoke"
+                  ? { ...base, fontWeight: 900, fontSize: 84, color: "#fff", WebkitTextStroke: "10px #000", paintOrder: "stroke fill", textShadow: "0 6px 0 rgba(0,0,0,.35)" }
+                  : { ...base, fontWeight: 900, fontSize: 92, color: "#fff", WebkitTextStroke: "14px #000", paintOrder: "stroke fill", textShadow: "0 8px 0 rgba(0,0,0,.35)" }
           }
         >
           {words.map((w) => {
@@ -88,6 +90,24 @@ export const Captions: React.FC<Props> = ({ captions, emphasis, style, accent })
                     background: active ? accent : strong ? "rgba(255,61,141,.92)" : "transparent",
                     color: active ? "#111" : "#fff",
                     transform: active ? "scale(1.06)" : "none",
+                  }}
+                >
+                  {w.text}
+                </span>
+              );
+            }
+            if (style === "karaoke") {
+              // kata yang sudah/sedang diucapkan terang, yang belum agak redup; kata aktif kuning
+              const spoken = w.fromMs <= nowMs;
+              return (
+                <span
+                  key={w.key}
+                  style={{
+                    ...wordStyle,
+                    color: strong ? "#FF3D8D" : active ? accent : "#fff",
+                    opacity: spoken ? 1 : 0.7,
+                    transform: `scale(${strong ? 1.16 : active ? 1.12 : 1})`,
+                    transformOrigin: "50% 70%",
                   }}
                 >
                   {w.text}

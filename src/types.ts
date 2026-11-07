@@ -30,7 +30,7 @@ export type BRollItem = {
   icon?: IconName;
 };
 
-export type CaptionStyle = "pop" | "box" | "clean";
+export type CaptionStyle = "pop" | "box" | "clean" | "karaoke";
 
 export type ClipProps = {
   /** Path relatif terhadap folder public/, misal "work/video1/clip_01.mp4" */
