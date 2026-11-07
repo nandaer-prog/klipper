@@ -56,6 +56,23 @@ Buka `http://IP_VPS:8080` di browser, login dengan username bebas dan password t
 - Ganti port dengan `PORT=9000`.
 - Dashboard hanya antarmuka. Pemrosesannya tetap dikerjakan watcher (`clipper`), jadi kedua proses PM2 harus berjalan.
 
+## Editing otomatis: kamera pintar, B-roll, caption
+Setiap klip diproses seperti editor short-form:
+- **Kamera pintar:** wajah dideteksi (OpenCV YuNet), gerak mulut menentukan siapa yang bicara, dan Remotion menggeser serta men-zoom kamera ke pembicara itu (potongan tegas + punch-in saat berganti, dentuman zoom pada kata penting). Jika wajah tidak terdeteksi (misal rekaman layar), dipakai tata letak latar blur.
+- **B-roll animasi:** Claude memilih momen dan jenisnya (ikon, angka besar, banner keyword, cutaway layar penuh). Semuanya digambar Remotion, tanpa stok video.
+- **Caption bergaya:** font Google (Montserrat, Anton), kata aktif disorot, kata penting dipertegas. Tersedia tiga gaya: Pop, Kotak, Bersih.
+- **Judul hook** di awal klip dan bilah progres tipis.
+
+Lingkungan analisis wajah dipasang sekali di folder proyek (tidak menyentuh sistem):
+```bash
+cd ~/clipper
+python3 -m venv .venv
+./.venv/bin/pip install opencv-python-headless numpy
+```
+Model wajah (`models/face_detection_yunet_2023mar.onnx`, 232 KB) sudah ikut di repo. Tanpa lingkungan ini, pipeline tetap jalan dan memakai tata letak latar blur. Ukuran terukur di VPS 4 vCPU: analisis wajah sekitar 8 detik per klip 30 detik, render sekitar 5 menit per klip 40 detik.
+
+Brief, jumlah klip, durasi, dan gaya diisi di jendela ruang Aoi sebelum mengunggah. Pengaturan disimpan di browser dan berlaku untuk video yang dikirim setelahnya.
+
 ## Pengaturan (environment variable)
 | Variabel | Default | Fungsi |
 |---|---|---|
