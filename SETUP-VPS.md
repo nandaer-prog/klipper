@@ -1,7 +1,30 @@
 # Clipper: Setup di VPS
 
-## Alur
-`inbox/` (video mentah) → FFmpeg → Whisper.cpp (transkrip per kata) → Claude Code (`claude -p`, memilih klip) → FFmpeg (potong) → Remotion (9:16 + caption + judul) → `output/<nama-video>/clip_XX.mp4`
+## Alur (dibagi dua tempat)
+**VPS (dashboard): input dan pemilihan momen**
+`inbox/` (video mentah / link) → Whisper.cpp (transkrip per kata) → Claude Code (`claude -p`, memilih momen sesuai **brief**) → **rencana momen** (`work/<id>/plan.json`) + video asli disimpan di `library/`
+
+**PC lokal: editing**
+`npm run local` mengambil rencana + video asli dari dashboard → FFmpeg (potong) → Remotion (9:16 + caption + judul + B-roll) → `output/<nama-video>/clip_XX.mp4` di PC Anda
+
+Render tidak dikerjakan VPS, jadi VPS tidak perlu Chrome/Remotion untuk render dan tidak terbebani CPU/RAM-nya.
+
+## Render di PC lokal
+1. Di PC: `git clone` proyek, `npm install`, pasang FFmpeg (harus ada di PATH). Untuk kamera pintar (face tracking) pasang juga Python dengan dependensi di `scripts/faces.py`; tanpa itu render memakai layout blur biasa.
+2. Buat berkas `.env.local` di folder proyek (tidak ikut git):
+   ```
+   CLIPPER_URL=http://IP_VPS:8080
+   CLIPPER_PASSWORD=password_dashboard
+   ```
+3. Jalankan:
+   ```bash
+   npm run local            # render semua rencana yang belum dirender
+   npm run local -- --list  # lihat daftar rencana
+   npm run local -- <id>    # render satu rencana (boleh diulang)
+   ```
+   Video asli diunduh sekali ke `work/<id>/`, hasil ada di `output/<id>/`, lalu dashboard menandai rencana "Sudah dirender".
+
+Di dashboard, meja Miu menampilkan rencana momen: pratinjau video asli, daftar momen (waktu, skor, alasan sesuai brief) dan tombol Putar untuk mengecek tiap momen sebelum dirender. Menghapus rencana juga menghapus video asli di `library/`.
 
 ## 1. Prasyarat di VPS (Ubuntu/Debian)
 ```bash
@@ -23,7 +46,7 @@ npm install
 ```
 
 ## 3. Pemakaian
-Satu video manual:
+Satu video manual (semua tahap termasuk render di mesin yang sama):
 ```bash
 npm run clip -- inbox/video.mp4
 ```
@@ -31,7 +54,7 @@ Otomatis (pantau folder inbox):
 ```bash
 npm run watch
 ```
-Letakkan video lewat desktop VPS (atau drag ke folder `inbox/`) → klip jadi di `output/`. File yang selesai dipindah ke `inbox/done/`, yang gagal ke `inbox/failed/`.
+Letakkan video lewat desktop VPS (atau drag ke folder `inbox/`) → rencana momen jadi di dashboard. Video yang selesai dipindah ke `library/`, yang gagal ke `inbox/failed/`.
 
 Jalankan terus di background dengan pm2:
 ```bash
@@ -42,7 +65,7 @@ npm i -g pm2 && pm2 start "npm run watch" --name clipper && pm2 save && pm2 star
 ```bash
 pm2 start "APP_PASSWORD=GANTI_PASSWORD_KUAT npm run server" --name clipper-ui && pm2 save
 ```
-Buka `http://IP_VPS:8080` di browser, login dengan username bebas dan password tadi. Seret video ke halaman, lalu pantau status, putar hasilnya, dan unduh klip di sana.
+Buka `http://IP_VPS:8080` di browser, login dengan username bebas dan password tadi. Seret video ke halaman (isi brief agar Claude memilih momen yang tepat), lalu pantau status dan lihat rencana momen di sana.
 
 - **Unduh dari link:** tempel link YouTube, Google Drive (file publik, "Siapa saja yang memiliki link"), atau link video langsung di kolom link. Server mengunduh dengan `yt-dlp` dan memasukkannya ke antrean otomatis. Pasang `yt-dlp` di VPS dulu:
   ```bash
@@ -83,7 +106,7 @@ Brief, jumlah klip, durasi, dan gaya diisi di jendela ruang Aoi sebelum mengungg
 | `MIN_CLIP_SEC` / `MAX_CLIP_SEC` | 25 / 75 | rentang durasi klip |
 | `MAX_CLIPS` | 6 | jumlah klip maksimum per video |
 | `CLIP_LAYOUT` | `blur-fit` | `cover` = crop tengah, `blur-fit` = video utuh + latar blur (dibuat FFmpeg) |
-| `RENDER_CONCURRENCY` | 3 | jumlah proses render Remotion paralel (kurangi jika RAM sempit) |
+| `RENDER_CONCURRENCY` | 3 | jumlah proses render Remotion paralel (dipakai saat render di PC lokal) |
 | `HEAVY_EXCLUSIVE` | 1 | 1 = transkripsi dan render bergantian (aman untuk RAM kecil); 0 = boleh bersamaan |
 | `MAX_INFLIGHT` | 3 | jumlah video yang boleh berjalan di pipeline sekaligus |
 | `MIN_FREE_MB` | 900 | tahap berat menunggu sampai RAM bebas sedikitnya sebesar ini |

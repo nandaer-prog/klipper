@@ -149,8 +149,8 @@ const ROOMS = [
   { name: "Aoi", title: "Antrean & Unduh", xc: -6.7, north: true, door: -5.3, deskX: -8.1, color: 0xf59e0b, rug: 0xf8e2b5 },
   { name: "Sora", title: "Transkripsi", xc: -0.1, north: true, door: 1.3, deskX: -1.5, color: 0x14b8a6, rug: 0xc9ece8 },
   { name: "Ren", title: "Claude Editor", xc: 6.6, north: true, door: 8.0, deskX: 5.2, color: 0x8b5cf6, rug: 0xddd2f7 },
-  { name: "Kai", title: "Render", xc: 6.6, north: false, door: 8.0, deskX: 5.2, color: 0xef4444, rug: 0xf6cdcd },
-  { name: "Miu", title: "Hasil Klip", xc: -6.7, north: false, door: -8.1, deskX: -5.3, color: 0x22c55e, rug: 0xcdeed8 },
+  { name: "Kai", title: "Render di PC", xc: 6.6, north: false, door: 8.0, deskX: 5.2, color: 0xef4444, rug: 0xf6cdcd },
+  { name: "Miu", title: "Rencana Momen", xc: -6.7, north: false, door: -8.1, deskX: -5.3, color: 0x22c55e, rug: 0xcdeed8 },
 ];
 ROOMS.forEach((r) => {
   r.deskZ = r.north ? -2.6 : 4.7;
@@ -433,8 +433,8 @@ const DEFS = [
   { name: "Aoi", role: "Koordinator Unduhan", station: 0, shirt: 0x2f5bd3, hair: 0x2b2b3a, skin: 0xf2c9a5 },
   { name: "Sora", role: "Juru Transkripsi", station: 1, shirt: 0xf2b705, hair: 0x5a3825, skin: 0xe8b98f },
   { name: "Ren", role: "Editor Claude", station: 2, shirt: 0xe8452c, hair: 0x1e1e1e, skin: 0xf2c9a5 },
-  { name: "Kai", role: "Operator Render", station: 3, shirt: 0x7b4bd6, hair: 0xc7c7d1, skin: 0xd9a67a },
-  { name: "Miu", role: "Penjaga Hasil", station: 4, shirt: 0xe060a0, hair: 0x6b3a2a, skin: 0xf2c9a5 },
+  { name: "Kai", role: "Operator Render (PC lokal)", station: 3, shirt: 0x7b4bd6, hair: 0xc7c7d1, skin: 0xd9a67a },
+  { name: "Miu", role: "Penjaga Rencana", station: 4, shirt: 0xe060a0, hair: 0x6b3a2a, skin: 0xf2c9a5 },
   { name: "Hina", role: "Kurir Studio", station: -1, shirt: 0x2fa564, hair: 0x8a5a2b, skin: 0xf2c9a5 },
 ];
 
@@ -977,8 +977,9 @@ const detectMoves = (m) => {
       }
     });
     prevStages.forEach((j, id) => {
-      if (!cur.has(id) && stageInfo(j.stage).st === 3) {
-        requestErrand(3, 4, j.file, id);
+      // di VPS pekerjaan selesai setelah tahap Claude (render dilakukan di PC lokal)
+      if (!cur.has(id) && stageInfo(j.stage).st >= 2) {
+        requestErrand(stageInfo(j.stage).st, 4, j.file, id);
         lastFinished = j.file;
         celebrateUntil = Math.max(celebrateUntil, now() + 7000);
       }
@@ -1045,7 +1046,7 @@ const bubbleEls = agents.map((a) => {
   bubbleLayer.appendChild(el);
   return el;
 });
-const ACTIONS = { 0: ["upload", "Klik untuk unggah video"], 4: ["results", "Klik untuk lihat hasil klip"] };
+const ACTIONS = { 0: ["upload", "Klik untuk unggah video"], 4: ["results", "Klik untuk lihat rencana momen"] };
 const openRoom = (i) => {
   const act = ACTIONS[i];
   if (act && window.openPanel) window.openPanel(act[0]);
@@ -1127,7 +1128,7 @@ const workText = (a, m) => {
       return `Render klip${x && x.detail ? " · " + x.detail : ""}`;
     }
     default:
-      return "Klip selesai, siap diunduh";
+      return "Rencana momen siap, render di PC lokal";
   }
 };
 

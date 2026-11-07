@@ -13,3 +13,5 @@ public/work/
 .whisper/
 .venv/
 __pycache__/
+library/
+.env.local

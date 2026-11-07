@@ -1,5 +1,6 @@
 import type { Caption } from "@remotion/captions";
 import { execFileSync } from "node:child_process";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { WORK } from "./config";
 import { pickClips, type ClipPlan } from "./pick-clips";
@@ -58,10 +59,34 @@ export const stageTranscribe = async (j: Job) => {
   console.log(`[${j.id}] transkrip: ${j.captions.length} kata`);
 };
 
+/** Rencana momen: hasil akhir di VPS, dibaca PC lokal untuk dirender. */
+export type Plan = {
+  id: string;
+  video: string; // nama file di folder library/
+  durationSec: number;
+  createdAt: number;
+  renderedAt?: number;
+  settings: JobSettings;
+  clips: ClipPlan[];
+};
+
+export const planFile = (workDir: string) => path.join(workDir, "plan.json");
+
 export const stageClaude = async (j: Job) => {
   await setJob(j.id, { stage: STAGE.claude, detail: "" });
   if (!j.captions) throw new Error("Transkrip belum ada");
-  j.clips = await pickClips(j.captions, probeDuration(j.videoPath), j.workDir, j.settings);
+  const durationSec = probeDuration(j.videoPath);
+  j.clips = await pickClips(j.captions, durationSec, j.workDir, j.settings);
+  await mkdir(j.workDir, { recursive: true });
+  const plan: Plan = {
+    id: j.id,
+    video: path.basename(j.videoPath),
+    durationSec,
+    createdAt: Date.now(),
+    settings: j.settings,
+    clips: j.clips,
+  };
+  await writeFile(planFile(j.workDir), JSON.stringify(plan, null, 2));
   console.log(`[${j.id}] Claude memilih ${j.clips.length} klip:`);
   for (const c of j.clips) {
     console.log(`  ${c.start.toFixed(1)}-${c.end.toFixed(1)}s  ${c.title}`);

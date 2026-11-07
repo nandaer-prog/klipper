@@ -210,9 +210,10 @@
   <div class="modal" id="modalResults" hidden>
     <div class="sheet" role="dialog" aria-label="Meja Miu">
       <header>
-        <div class="who"><span class="av" style="background:#e060a0">MI</span><div><b>Meja Miu</b><small>Penjaga Hasil: putar, unduh, atau hapus klip</small></div></div>
+        <div class="who"><span class="av" style="background:#e060a0">MI</span><div><b>Meja Miu</b><small>Penjaga Rencana: momen pilihan Claude, putar cuplikan, hapus</small></div></div>
         <button class="x" data-close aria-label="Tutup">×</button>
       </header>
+      <div class="muted" style="margin:4px 0 10px">Render dikerjakan di PC lokal: jalankan <code>npm run local</code> di folder proyek.</div>
       <div id="results" class="list"></div>
       <div id="failedWrap" class="sec" hidden>
         <h4>Gagal diproses</h4>
@@ -226,6 +227,7 @@ const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[c]));
 const mb = (n) => (n / 1048576).toFixed(1) + " MB";
 const enc = encodeURIComponent;
+const tm = (s) => Math.floor(s / 60) + ":" + String(Math.floor(s % 60)).padStart(2, "0");
 
 // ---------- Modal ----------
 const open = (id) => { $(id).hidden = false; };
@@ -365,22 +367,23 @@ async function refresh() {
     lastResultsSig = sig;
     $("results").innerHTML = s.results.length
       ? s.results.map((r) => `
-        <div class="card">
+        <div class="card" data-plan="${esc(r.id)}">
           <div class="row">
             <strong>${esc(r.id)}</strong>
+            <span class="pill" style="${r.renderedAt ? "color:var(--ok)" : ""}">${r.renderedAt ? "Sudah dirender" : "Menunggu render"}</span>
             <button class="btn ghost" data-del="${esc(r.id)}">Hapus</button>
           </div>
+          ${r.brief ? `<div class="muted">Brief: ${esc(r.brief)}</div>` : ""}
+          <video class="pv" src="/api/source/${enc(r.id)}" controls preload="metadata" playsinline style="width:100%;max-height:220px;margin:8px 0"></video>
           <div class="clips">
-            ${r.clips.map((c) => {
-              const u = `/files/${enc(r.id)}/${enc(c.name)}`;
-              return `<div class="clip">
-                <video src="${u}" controls preload="metadata" playsinline></video>
-                <div class="row"><span class="muted">${esc(c.name)} · ${mb(c.size)}</span><a class="btn" href="${u}?download=1">Unduh</a></div>
-              </div>`;
-            }).join("")}
+            ${r.clips.map((c, i) => `
+              <div class="row moment" data-start="${c.start}" data-end="${c.end}" style="cursor:pointer;align-items:flex-start">
+                <span><b>${i + 1}. ${esc(c.title)}</b><br><span class="muted">${tm(c.start)}–${tm(c.end)} · skor ${c.score}/10 · ${esc(c.reason)}</span></span>
+                <button class="btn" data-play>Putar</button>
+              </div>`).join("")}
           </div>
         </div>`).join("")
-      : `<div class="muted">Belum ada hasil. Unggah video di meja Aoi.</div>`;
+      : `<div class="muted">Belum ada rencana momen. Unggah video di meja Aoi.</div>`;
   }
 
   $("failedWrap").hidden = s.failed.length === 0;
@@ -389,10 +392,20 @@ async function refresh() {
     ${f.error ? `<div class="err">${esc(f.error)}</div>` : ""}</div>`).join("");
 }
 
+let stopAt = 0;
 $("results").onclick = async (e) => {
+  const row = e.target.closest && e.target.closest(".moment");
+  if (row) {
+    const v = row.closest(".card").querySelector("video.pv");
+    stopAt = Number(row.dataset.end);
+    v.currentTime = Number(row.dataset.start);
+    v.play();
+    v.ontimeupdate = () => { if (v.currentTime >= stopAt) { v.pause(); v.ontimeupdate = null; } };
+    return;
+  }
   const id = e.target.dataset && e.target.dataset.del;
   if (!id) return;
-  if (!confirm(`Hapus semua klip "${id}"? Tidak bisa dibatalkan.`)) return;
+  if (!confirm(`Hapus rencana "${id}" beserta video aslinya di server? Tidak bisa dibatalkan.`)) return;
   await fetch("/api/delete/" + enc(id), { method: "POST" });
   lastResultsSig = ""; refresh();
 };
