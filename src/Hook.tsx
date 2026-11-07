@@ -69,14 +69,16 @@ export const Hook: React.FC<{ title: string; accent: string; emphasis?: string[]
                   color: accent,
                   borderRadius: 14,
                   padding: "0 14px",
-                  margin: "0 4px",
+                  margin: "0 0.14em",
                   transform: `scale(${pulse})`,
                 }}
               >
                 {w}
               </span>
             ) : (
-              <span key={i}>{i > 0 ? " " : ""}{w}{i < words.length - 1 ? " " : ""}</span>
+              <span key={i} style={{ display: "inline-block", margin: "0 0.14em" }}>
+                {w}
+              </span>
             ),
           )}
         </div>
