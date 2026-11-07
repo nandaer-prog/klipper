@@ -8,6 +8,7 @@ import path from "node:path";
 import type { ClipProps } from "../src/types";
 import { buildCamera, type FacesJson } from "./camera";
 import { sanitizeCaptions } from "./captions";
+import { attachFootage } from "./footage";
 import { LAYOUT, OUTPUT, RENDER_CONCURRENCY, ROOT } from "./config";
 import type { ClipPlan } from "./pick-clips";
 import type { JobSettings } from "./settings";
@@ -134,7 +135,11 @@ export const renderClips = async (
       captionStyle: process.env.CAPTION_STYLE === "karaoke" ? ("karaoke" as const) : settings.captionStyle,
       title: clip.title,
       hook: settings.hook,
-      broll: spaceBroll(clip.broll),
+      broll: await attachFootage(spaceBroll(clip.broll), {
+        publicDir: path.join(ROOT, "public"),
+        relDir: `work/${id}`,
+        prefix: `broll_${n}`,
+      }),
       durationInSeconds: dur,
       accent: "#FFE600",
     };

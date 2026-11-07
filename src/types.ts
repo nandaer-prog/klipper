@@ -28,6 +28,8 @@ export type BRollItem = {
   text: string;
   sub?: string;
   icon?: IconName;
+  /** Path footage (relatif terhadap public/) untuk cutaway `scene`; kosong = animasi */
+  footage?: string;
 };
 
 export type CaptionStyle = "pop" | "box" | "clean" | "karaoke";
