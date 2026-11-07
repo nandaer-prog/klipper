@@ -59,11 +59,34 @@ Buka `http://IP_VPS:8080` di browser, login dengan username bebas dan password t
 ## Pengaturan (environment variable)
 | Variabel | Default | Fungsi |
 |---|---|---|
-| `WHISPER_MODEL` | `small` | tiny / base / small / medium / large-v3 |
+| `WHISPER_MODEL` | `base` | tiny / base / small / medium / large-v3. Lebih besar = lebih akurat tapi jauh lebih lambat |
+| `WHISPER_BEAM` | `1` | 1 = greedy (cepat); 5 = beam search (lebih akurat, sekitar 3x lebih lambat) |
+| `WHISPER_THREADS` | `4` | jumlah thread CPU untuk Whisper |
 | `WHISPER_LANGUAGE` | `id` | kode bahasa audio (`en`, dll.) |
 | `MIN_CLIP_SEC` / `MAX_CLIP_SEC` | 25 / 75 | rentang durasi klip |
 | `MAX_CLIPS` | 6 | jumlah klip maksimum per video |
-| `CLIP_LAYOUT` | `blur-fit` | `cover` = crop tengah, `blur-fit` = video utuh + latar blur |
+| `CLIP_LAYOUT` | `blur-fit` | `cover` = crop tengah, `blur-fit` = video utuh + latar blur (dibuat FFmpeg) |
+| `RENDER_CONCURRENCY` | 3 | jumlah proses render Remotion paralel (kurangi jika RAM sempit) |
+| `HEAVY_EXCLUSIVE` | 1 | 1 = transkripsi dan render bergantian (aman untuk RAM kecil); 0 = boleh bersamaan |
+| `MAX_INFLIGHT` | 3 | jumlah video yang boleh berjalan di pipeline sekaligus |
+| `MIN_FREE_MB` | 900 | tahap berat menunggu sampai RAM bebas sedikitnya sebesar ini |
+
+Contoh mengubah pengaturan di PM2: `WHISPER_MODEL=small pm2 restart clipper --update-env && pm2 save`
+
+## Kinerja terukur (VPS 4 vCPU "Common KVM", RAM 3,8 GB, tanpa GPU)
+Video wawancara 130 detik (landscape 1080p, bahasa Indonesia):
+- Transkripsi: model `base` + greedy ≈ 6 menit (sekitar 2,7x durasi video). Model `small` + beam 5 ≈ 20 menit untuk video 2 menit, jadi tidak layak untuk video panjang.
+- Claude memilih klip: sekitar 25 detik.
+- Menyiapkan 3 klip dengan FFmpeg: sekitar 1,5 menit.
+- Render Remotion: sekitar 3,5 menit per klip 30 detik.
+
+Artinya video 1 jam butuh transkripsi sekitar 2,5 jam di VPS ini. Untuk video panjang, pertimbangkan VPS dengan CPU lebih kuat atau layanan transkripsi eksternal.
+
+## Memperbarui ke versi terbaru
+```bash
+cd ~/clipper && git checkout -- package-lock.json && git pull origin master && npm install --no-package-lock && pm2 restart all
+```
+Pastikan tidak ada video yang sedang diproses saat restart (video yang terputus kembali ke antrean dan diproses ulang dari awal).
 
 ## Tahapan bisa diulang
 Hasil tiap tahap disimpan di `work/<nama-video>/` (`captions.json`, `clips.json`). Untuk memilih ulang klip, hapus `clips.json`; edit manual juga bisa sebelum render ulang.

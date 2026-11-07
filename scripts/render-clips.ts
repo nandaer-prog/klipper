@@ -6,6 +6,7 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 import type { ClipProps } from "../src/types";
 import { LAYOUT, OUTPUT, RENDER_CONCURRENCY, ROOT } from "./config";
+import { sanitizeCaptions } from "./captions";
 import type { ClipPlan } from "./pick-clips";
 import { setJob } from "./status";
 
@@ -79,6 +80,8 @@ export const renderClips = async (
   const outDir = path.join(OUTPUT, id);
   await mkdir(segDir, { recursive: true });
   await mkdir(outDir, { recursive: true });
+
+  captions = sanitizeCaptions(captions);
 
   // 1. Potong dan susun latar dengan FFmpeg (tanpa memblokir proses lain)
   const items: { n: string; props: ClipProps }[] = [];
