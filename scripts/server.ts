@@ -5,7 +5,8 @@ import http from "node:http";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { randomUUID, timingSafeEqual } from "node:crypto";
-import { INBOX, OUTPUT, ROOT, VIDEO_EXT, WORK } from "./config";
+import { INBOX, LIBRARY, ROOT, VIDEO_EXT, WORK } from "./config";
+import type { Plan } from "./pipeline";
 import { defaultSettings, parseSettings, type JobSettings } from "./settings";
 
 const PASSWORD = process.env.APP_PASSWORD;
@@ -17,7 +18,7 @@ const PORT = Number(process.env.PORT ?? 8080);
 const UPLOADING = path.join(INBOX, ".uploading");
 const FAILED = path.join(INBOX, "failed");
 await mkdir(UPLOADING, { recursive: true });
-await mkdir(OUTPUT, { recursive: true });
+await mkdir(LIBRARY, { recursive: true });
 
 // ---------- Unduh dari link (yt-dlp) ----------
 type Download = {
@@ -142,6 +143,18 @@ const listFiles = async (dir: string, exts?: string[]) => {
   return out.sort((a, b) => b.mtime - a.mtime);
 };
 
+const planFile = (dir: string) => path.join(dir, "plan.json");
+
+const validId = (id: string | undefined): id is string => !!id && /^[\w-]+$/.test(id);
+
+const readPlan = async (id: string): Promise<Plan | null> => {
+  try {
+    return JSON.parse(await readFile(planFile(path.join(WORK, id)), "utf8")) as Plan;
+  } catch {
+    return null;
+  }
+};
+
 const getState = async () => {
   let jobs: unknown[] = [];
   try {
@@ -165,14 +178,21 @@ const getState = async () => {
     failed.push({ ...f, error });
   }
 
+  // Rencana momen yang siap diambil PC lokal untuk dirender
   const results = [];
-  for (const d of await readdir(OUTPUT, { withFileTypes: true })) {
+  for (const d of await readdir(WORK, { withFileTypes: true })) {
     if (!d.isDirectory()) continue;
-    const clips = (await listFiles(path.join(OUTPUT, d.name), [".mp4"])).sort(
-      (a, b) => a.name.localeCompare(b.name),
-    );
-    if (clips.length === 0) continue;
-    results.push({ id: d.name, mtime: Math.max(...clips.map((c) => c.mtime)), clips });
+    const plan = await readPlan(d.name);
+    if (!plan || !existsSync(path.join(LIBRARY, plan.video))) continue;
+    results.push({
+      id: plan.id,
+      mtime: plan.createdAt,
+      video: plan.video,
+      durationSec: plan.durationSec,
+      brief: plan.settings.brief,
+      renderedAt: plan.renderedAt ?? null,
+      clips: plan.clips,
+    });
   }
   results.sort((a, b) => b.mtime - a.mtime);
 
@@ -189,6 +209,7 @@ const serveFile = async (
   res: http.ServerResponse,
   file: string,
   download: boolean,
+  contentType = "video/mp4",
 ) => {
   let s;
   try {
@@ -199,7 +220,7 @@ const serveFile = async (
     return;
   }
   const headers: Record<string, string | number> = {
-    "content-type": "video/mp4",
+    "content-type": contentType,
     "accept-ranges": "bytes",
   };
   if (download) {
@@ -342,26 +363,42 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // /files/<id>/<clip.mp4>
-    if (req.method === "GET" && parts[0] === "files" && parts.length === 3) {
-      const file = path.resolve(OUTPUT, parts[1]!, parts[2]!);
-      if (!file.startsWith(OUTPUT + path.sep)) {
-        res.writeHead(403).end();
+    // GET /api/plan/<id> : rencana momen (JSON) untuk PC lokal
+    // GET /api/plan/<id>/captions : transkrip per kata
+    // GET /api/source/<id> : video asli (mendukung Range)
+    // POST /api/plan/<id>/rendered : PC lokal menandai rencana sudah dirender
+    if (parts[0] === "api" && (parts[1] === "plan" || parts[1] === "source") && validId(parts[2])) {
+      const id = parts[2];
+      const plan = await readPlan(id);
+      if (!plan) {
+        res.writeHead(404).end("Rencana tidak ditemukan");
         return;
       }
-      await serveFile(req, res, file, url.searchParams.has("download"));
-      return;
+      if (req.method === "GET" && parts[1] === "plan" && parts.length === 3) {
+        json(res, plan);
+        return;
+      }
+      if (req.method === "GET" && parts[1] === "plan" && parts[3] === "captions") {
+        await serveFile(req, res, path.join(WORK, id, "captions.json"), false, "application/json");
+        return;
+      }
+      if (req.method === "GET" && parts[1] === "source") {
+        await serveFile(req, res, path.join(LIBRARY, path.basename(plan.video)), url.searchParams.has("download"));
+        return;
+      }
+      if (req.method === "POST" && parts[1] === "plan" && parts[3] === "rendered") {
+        plan.renderedAt = Date.now();
+        await writeFile(planFile(path.join(WORK, id)), JSON.stringify(plan, null, 2));
+        json(res, { ok: true });
+        return;
+      }
     }
 
-    // POST /api/delete/<id>
-    if (req.method === "POST" && parts[0] === "api" && parts[1] === "delete" && parts[2]) {
-      const dir = path.resolve(OUTPUT, parts[2]);
-      if (!dir.startsWith(OUTPUT + path.sep)) {
-        res.writeHead(403).end();
-        return;
-      }
-      await rm(dir, { recursive: true, force: true });
-      await rm(path.join(ROOT, "public", "work", parts[2]), { recursive: true, force: true });
+    // POST /api/delete/<id> : hapus rencana, transkrip, dan video asli
+    if (req.method === "POST" && parts[0] === "api" && parts[1] === "delete" && validId(parts[2])) {
+      const plan = await readPlan(parts[2]);
+      if (plan) await rm(path.join(LIBRARY, path.basename(plan.video)), { force: true });
+      await rm(path.join(WORK, parts[2]), { recursive: true, force: true });
       json(res, { ok: true });
       return;
     }

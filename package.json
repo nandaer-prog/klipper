@@ -38,7 +38,8 @@
     "lint": "eslint src scripts && tsc",
     "clip": "tsx scripts/pipeline.ts",
     "watch": "tsx scripts/watch.ts",
-    "server": "tsx scripts/server.ts"
+    "server": "tsx scripts/server.ts",
+    "local": "tsx scripts/local.ts"
   },
   "allowScripts": {
     "esbuild": false

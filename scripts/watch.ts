@@ -1,11 +1,10 @@
 import { mkdir, readdir, readFile, rename, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { HEAVY_EXCLUSIVE, INBOX, VIDEO_EXT } from "./config";
+import { HEAVY_EXCLUSIVE, INBOX, LIBRARY, VIDEO_EXT } from "./config";
 import {
   makeJob,
   STAGE,
   stageClaude,
-  stageRender,
   stageTranscribe,
   type Job,
 } from "./pipeline";
@@ -13,12 +12,12 @@ import { takeSidecar } from "./settings";
 import { clearJobs, removeJob, setJob } from "./status";
 
 /**
- * Pipeline per tahap: Transkripsi -> Claude -> Render.
- * Tiap tahap memproses satu video sekaligus, tetapi tahap-tahap berjalan
- * bersamaan. Begitu video A pindah dari transkripsi ke Claude, video antre B
- * langsung mulai ditranskrip tanpa menunggu A selesai render.
+ * Pipeline di VPS per tahap: Transkripsi -> Claude memilih momen.
+ * Hasilnya rencana momen (work/<id>/plan.json) dan video asli dipindah ke library/.
+ * Render Remotion TIDAK dilakukan di sini: PC lokal mengambil rencana + video
+ * lewat dashboard (`npm run local`) lalu merender sendiri.
+ * Tiap tahap memproses satu video sekaligus, tetapi tahap-tahap berjalan bersamaan.
  */
-const DONE = path.join(INBOX, "done");
 const FAILED = path.join(INBOX, "failed");
 const PROCESSING = path.join(INBOX, "processing");
 // Batas video yang sedang berjalan, supaya hasil transkrip tidak menumpuk
@@ -26,7 +25,7 @@ const MAX_INFLIGHT = Number(process.env.MAX_INFLIGHT ?? 3);
 // Tahap berat menunggu sampai RAM bebas cukup (Linux saja)
 const MIN_FREE_MB = Number(process.env.MIN_FREE_MB ?? 900);
 
-await mkdir(DONE, { recursive: true });
+await mkdir(LIBRARY, { recursive: true });
 await mkdir(FAILED, { recursive: true });
 await mkdir(PROCESSING, { recursive: true });
 await clearJobs();
@@ -48,7 +47,6 @@ const fakeStage = (stage: string) => async (j: Job) => {
 const run = {
   transcribe: dry ? fakeStage(STAGE.transcribe) : stageTranscribe,
   claude: dry ? fakeStage(STAGE.claude) : stageClaude,
-  render: dry ? fakeStage(STAGE.render) : stageRender,
 };
 
 const memAvailableMB = async () => {
@@ -89,8 +87,8 @@ const withHeavy = async <T>(j: Job, task: () => Promise<T>): Promise<T> => {
 };
 
 const inflight = new Set<Job>();
-const queues = { claude: [] as Job[], render: [] as Job[] };
-const busy = { transcribe: false, claude: false, render: false };
+const queues = { claude: [] as Job[] };
+const busy = { transcribe: false, claude: false };
 
 const fail = async (j: Job, e: unknown) => {
   console.error(`[${j.id}] gagal:`, e);
@@ -105,30 +103,12 @@ const fail = async (j: Job, e: unknown) => {
   await removeJob(j.id);
 };
 
+/** Rencana siap: simpan video asli di library/ agar PC lokal bisa mengambilnya. */
 const finish = async (j: Job) => {
-  await rename(j.videoPath, path.join(DONE, path.basename(j.videoPath)));
+  await rename(j.videoPath, path.join(LIBRARY, path.basename(j.videoPath)));
   inflight.delete(j);
   await removeJob(j.id);
-  console.log(`[${j.id}] selesai`);
-};
-
-const runRender = async () => {
-  if (busy.render) return;
-  const j = queues.render.shift();
-  if (!j) return;
-  busy.render = true;
-  try {
-    await withHeavy(j, async () => {
-      await waitMemory(j);
-      await run.render(j);
-    });
-    await finish(j);
-  } catch (e) {
-    await fail(j, e);
-  } finally {
-    busy.render = false;
-    void runRender();
-  }
+  console.log(`[${j.id}] rencana momen siap, menunggu dirender di PC lokal`);
 };
 
 const runClaude = async () => {
@@ -138,9 +118,7 @@ const runClaude = async () => {
   busy.claude = true;
   try {
     await run.claude(j);
-    queues.render.push(j);
-    await setJob(j.id, { stage: STAGE.waitRender, detail: "" });
-    void runRender();
+    await finish(j);
   } catch (e) {
     await fail(j, e);
   } finally {

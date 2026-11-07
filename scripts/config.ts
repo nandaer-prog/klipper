@@ -6,6 +6,8 @@ export const INBOX = process.env.INBOX_DIR
   ? path.resolve(process.env.INBOX_DIR)
   : path.join(ROOT, "inbox");
 export const OUTPUT = path.join(ROOT, "output");
+// Video asli yang sudah dianalisis, disimpan di VPS sampai diambil PC lokal untuk dirender
+export const LIBRARY = path.join(ROOT, "library");
 export const WORK = path.join(ROOT, "work");
 export const WHISPER_DIR = path.join(ROOT, ".whisper");
 
