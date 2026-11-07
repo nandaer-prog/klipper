@@ -4,7 +4,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { ICONS, type BRollItem } from "../src/types";
+import { APP_ICONS, ICONS, type AppIconName, type BRollItem } from "../src/types";
 import type { JobSettings } from "./settings";
 
 export type ClipPlan = {
@@ -133,6 +133,8 @@ const clampN = (v: unknown, a: number, b: number, fb: number) => {
   return Number.isFinite(n) ? Math.max(a, Math.min(b, n)) : fb;
 };
 
+const BROLL_TYPES = ["icon", "stat", "keyword", "scene", "prompt", "card", "orbit"];
+
 /** Rapikan B-roll dari Claude: batasi jenis, waktu, jarak, dan jumlah. */
 export const cleanBroll = (raw: unknown, clipDur: number, hook = true): BRollItem[] => {
   if (!Array.isArray(raw)) return [];
@@ -144,14 +146,32 @@ export const cleanBroll = (raw: unknown, clipDur: number, hook = true): BRollIte
     .sort((a, b) => Number(a.at) - Number(b.at));
   let lastEnd = hook ? 3.5 : 0.8; // beri ruang untuk judul hook di awal
   for (const r of sorted) {
-    const type = ["icon", "stat", "keyword", "scene"].includes(String(r.type)) ? (String(r.type) as BRollItem["type"]) : "icon";
+    const type = BROLL_TYPES.includes(String(r.type) as never) ? (String(r.type) as BRollItem["type"]) : "icon";
+    const isScreen = type === "prompt" || type === "card" || type === "orbit";
+    // scene dan layar tiruan (prompt/card/orbit) tampil lebih singkat daripada icon/stat/keyword
     const dur = clampN(r.dur, 1.4, type === "scene" ? 2.4 : 3, 2);
     const at = clampN(r.at, 0, clipDur, 0);
-    const text = String(r.text ?? "").replace(/\s+/g, " ").trim().slice(0, 28);
+    // prompt boleh sampai ~90 karakter, card ~60 (headline), orbit judul pendek maks 4 kata
+    const maxText = type === "prompt" ? 90 : type === "card" ? 60 : 28;
+    let text = String(r.text ?? "").replace(/\s+/g, " ").trim();
+    if (type === "orbit") text = text.split(" ").slice(0, 4).join(" ");
+    text = text.slice(0, maxText);
     if (!text || at < lastEnd || at + dur > clipDur - 0.6 || items.length >= maxItems) continue;
     const icon = ICONS.includes(r.icon as never) ? (r.icon as BRollItem["icon"]) : "star";
     const sub = r.sub ? String(r.sub).replace(/\s+/g, " ").trim().slice(0, 30) : undefined;
-    items.push({ at: Math.round(at * 10) / 10, dur: Math.round(dur * 10) / 10, type, text, sub, icon });
+    const item: BRollItem = { at: Math.round(at * 10) / 10, dur: Math.round(dur * 10) / 10, type, text, sub, icon };
+    if (isScreen) {
+      // ikon aplikasi: buang yang tidak dikenal dan duplikat; card 1-4, orbit 2-4
+      const icons = Array.isArray(r.icons)
+        ? [...new Set(r.icons.map(String).filter((i) => APP_ICONS.includes(i as never)))].slice(0, 4) as AppIconName[]
+        : [];
+      if (type === "orbit" && icons.length < 2) continue;
+      if (type === "card" && icons.length < 1) continue;
+      if (icons.length) item.icons = icons;
+      const badge = Math.round(Number(r.badge));
+      if (type === "prompt" && Number.isFinite(badge) && badge >= 1 && badge <= 9) item.badge = badge;
+    }
+    items.push(item);
     lastEnd = at + dur + 1.2;
   }
   return items;
@@ -207,8 +227,12 @@ Pilih sampai ${want} momen terbaik. Aturan:
 - emphasis: 4-8 kata penting dari ucapan di klip itu (huruf kecil, persis seperti diucapkan) yang pantas ditebalkan di caption.
 ${
   settings.broll
-    ? `- broll: daftar animasi B-roll untuk klip itu (kosongkan [] jika tidak cocok). Tiap item: {"at": detik relatif dari awal klip (mulai >= 3.5), "dur": 1.5-2.5, "type": "icon"|"stat"|"keyword"|"scene", "text": teks pendek (icon/keyword maks 3 kata, stat maks 8 karakter seperti "100%" atau "10x"), "sub": teks kecil opsional, "icon": salah satu dari ${ICONS.join(", ")}}.
-  Pakai broll untuk memperjelas ucapan di momen itu (misal angka -> stat, peringatan -> icon warning, ide penting -> keyword, momen dramatis -> scene). Maksimal 1 item tiap 7 detik, jarak antar item minimal 1.5 detik.`
+    ? `- broll: daftar animasi B-roll untuk klip itu (kosongkan [] jika tidak cocok). Tiap item: {"at": detik relatif dari awal klip (mulai >= 3.5), "dur": 1.5-2.5, "type": "icon"|"stat"|"keyword"|"scene"|"prompt"|"card"|"orbit", "text": teks pendek (icon/keyword maks 3 kata, stat maks 8 karakter seperti "100%" atau "10x"), "sub": teks kecil opsional, "icon": salah satu dari ${ICONS.join(", ")}, "icons": daftar ikon aplikasi (hanya untuk prompt/card/orbit) dari ${APP_ICONS.join(", ")}, "badge": angka 1-9 (hanya prompt)}.
+  Pakai broll untuk memperjelas ucapan di momen itu (misal angka -> stat, peringatan -> icon warning, ide penting -> keyword, momen dramatis -> scene). Tipe layar tiruan (dur 2-3 detik):
+  * "prompt" = layar tiruan prompt AI. Pakai saat pembicara menjelaskan perintah/instruksi yang diberikan ke AI. "text" = isi prompt yang diketik (maks 90 karakter), "sub" = judul kecil di atas kotak, "badge" = nomor langkah (1-9).
+  * "card" = kartu berita. Pakai saat pembicara menyebut data, laporan, atau berita. "text" = headline (maks 60 karakter), "sub" = nama sumber, "icons" = 1-4 ikon.
+  * "orbit" = ikon AI dengan ikon-ikon mengorbit. Pakai saat pembicara menyebut beberapa alat yang saling terhubung. "text" = judul pendek (maks 4 kata), "icons" = 2-4 ikon.
+  Maksimal 1 item tiap 7 detik, jarak antar item minimal 1.5 detik.`
     : `- broll: selalu [].`
 }
 
