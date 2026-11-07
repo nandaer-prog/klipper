@@ -275,6 +275,15 @@ export const pickClips = async (
     candidates.push(...(parsed.clips ?? []));
   }
 
+  if (candidates.length === 0) {
+    throw new Error(
+      settings.brief
+        ? `Claude tidak menemukan momen yang cocok dengan brief: "${settings.brief}". Coba brief yang lebih umum atau sesuaikan dengan isi video.`
+        : "Claude tidak mengembalikan momen apa pun dari transkrip ini.",
+    );
+  }
+  console.log(`Claude mengusulkan ${candidates.length} momen, memvalidasi...`);
+
   // 2. Rapikan batas ke kata, validasi, lalu ambil yang terbaik tanpa tumpang tindih
   type Valid = ClipPlan & { order: number };
   const normalized: Valid[] = [];
