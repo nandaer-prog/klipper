@@ -1,4 +1,5 @@
 import type { Caption } from "@remotion/captions";
+import type { Tone } from "./tone";
 
 /** Jalur kamera per frame: titik pusat di video sumber (piksel) dan zoom. */
 export type Camera = { cx: number[]; cy: number[]; z: number[] };
@@ -64,6 +65,8 @@ export type ClipProps = {
   broll: BRollItem[];
   durationInSeconds: number;
   accent: string;
+  /** Nada klip untuk memilih paket gaya animasi; kosong = ditebak dari kata-kata dan judul klip */
+  tone?: Tone;
 };
 
 export const defaultClipProps: ClipProps = {

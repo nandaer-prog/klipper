@@ -36,13 +36,14 @@ const roughClip = (seed: string) => {
   ].join(", ")})`;
 };
 
-const paperIndex = (seed: string, idx: number) => Math.floor(random(`${seed}-${idx}-p`) * PAPERS.length);
+/** Kertas untuk huruf ke-idx, dipilih dari daftar yang diizinkan nada klip. */
+const paperIndex = (seed: string, idx: number, allowed: readonly number[]) => allowed[Math.floor(random(`${seed}-${idx}-p`) * allowed.length)]!;
 
-const Letter: React.FC<{ ch: string; idx: number; seed: string; fontSize: number; frame: number }> = ({ ch, idx, seed, fontSize, frame }) => {
+const Letter: React.FC<{ ch: string; idx: number; seed: string; fontSize: number; frame: number; allowed: readonly number[] }> = ({ ch, idx, seed, fontSize, frame, allowed }) => {
   const s = `${seed}-${idx}`;
-  let p = paperIndex(seed, idx);
+  let p = paperIndex(seed, idx, allowed);
   // huruf bersebelahan jangan dari kertas yang sama
-  if (idx > 0 && p === paperIndex(seed, idx - 1)) p = (p + 3) % PAPERS.length;
+  if (idx > 0 && allowed.length > 1 && p === paperIndex(seed, idx - 1, allowed)) p = allowed[(allowed.indexOf(p) + 1) % allowed.length]!;
   const paper = PAPERS[p]!;
   // mendarat satu per satu "on twos", lalu bergetar halus "on threes"
   const q = onTwos(frame) - idx * 2;
@@ -76,7 +77,7 @@ const Letter: React.FC<{ ch: string; idx: number; seed: string; fontSize: number
 };
 
 /** Keyword gaya surat kaleng: tiap huruf potongan kertas berbeda yang ditempel satu per satu. */
-export const RansomWord: React.FC<{ item: BRollItem; durFrames: number }> = ({ item, durFrames }) => {
+export const RansomWord: React.FC<{ item: BRollItem; durFrames: number; papers?: readonly number[] }> = ({ item, durFrames, papers = PAPERS.map((_, i) => i) }) => {
   const frame = useCurrentFrame();
   const words = item.text.toUpperCase().split(/\s+/).filter(Boolean);
   const lines: string[][] = [];
@@ -110,7 +111,7 @@ export const RansomWord: React.FC<{ item: BRollItem; durFrames: number }> = ({ i
               <div key={wi} style={{ display: "flex", marginRight: wi < line.length - 1 ? 34 : 0 }}>
                 {[...word].map((ch) => {
                   const idx = k++;
-                  return <Letter key={idx} ch={ch} idx={idx} seed={item.text} fontSize={fontSize} frame={frame} />;
+                  return <Letter key={idx} ch={ch} idx={idx} seed={item.text} fontSize={fontSize} frame={frame} allowed={papers} />;
                 })}
               </div>
             ))}

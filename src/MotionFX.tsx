@@ -4,6 +4,7 @@ import { AbsoluteFill, Sequence, interpolate, useCurrentFrame, useVideoConfig } 
 import { MoneyMascot, PeekingBuddy } from "./Characters";
 import { CollageDefs, CollageSticker, GlitchEyes } from "./Collage";
 import { LightLeak, Viewfinder } from "./Overlays";
+import { TONE_STYLE, type Tone } from "./tone";
 import type { BRollItem, IconName } from "./types";
 import { emphasisBeats, iconForWord, normWord, toWords, wordClass } from "./wordIcons";
 
@@ -16,9 +17,6 @@ type Sticker = { at: number; dur: number; kind: StickerKind; icon: IconName; sid
 
 /** Lama tampil tiap jenis (detik). */
 const DUR: Record<StickerKind, number> = { icon: 1.3, eyes: 1.8, peek: 2, money: 2.2, rec: 2.2 };
-/** Kata "sadap/intip/rekam" bergiliran memakai tiga gaya ini; kata uang bergiliran maskot dan stiker. */
-const SURVEIL_CYCLE: StickerKind[] = ["rec", "eyes", "peek"];
-const MONEY_CYCLE: StickerKind[] = ["money", "icon"];
 
 /**
  * Stiker pada kata penting (emphasis), kata bermakna kuat (presiden, bahaya...), kata pengawasan,
@@ -28,9 +26,12 @@ export const buildStickers = (
   captions: Caption[],
   emphasis: string[],
   broll: BRollItem[],
-  opts: { skipBefore: number; gap?: number },
+  opts: { skipBefore: number; gap?: number; tone?: Tone },
 ): Sticker[] => {
   const gap = opts.gap ?? 1.5;
+  // kata pengawasan/uang bergiliran di dalam paket stiker sesuai nada klip
+  const SURVEIL_CYCLE = TONE_STYLE[opts.tone ?? "edukasi"].surveil;
+  const MONEY_CYCLE = TONE_STYLE[opts.tone ?? "edukasi"].money;
   const emphAt = new Set(emphasisBeats(captions, emphasis));
   const busy = (t0: number, t1: number) => broll.some((b) => t1 >= b.at - 0.4 && t0 <= b.at + b.dur + 0.4);
   const out: Sticker[] = [];
@@ -126,9 +127,10 @@ export const MotionFX: React.FC<{
   broll: BRollItem[];
   accent: string;
   hook: boolean;
-}> = ({ captions, emphasis, broll, accent, hook }) => {
+  tone?: Tone;
+}> = ({ captions, emphasis, broll, accent, hook, tone }) => {
   const { fps } = useVideoConfig();
-  const stickers = buildStickers(captions, emphasis, broll, { skipBefore: hook ? 3.4 : 0.5 });
+  const stickers = buildStickers(captions, emphasis, broll, { skipBefore: hook ? 3.4 : 0.5, tone });
   return (
     <>
       <CollageDefs />

@@ -4,6 +4,7 @@ import { BRollLayer } from "./BRoll";
 import { Captions } from "./Captions";
 import { Hook } from "./Hook";
 import { MotionFX } from "./MotionFX";
+import { detectTone } from "./tone";
 import { emphasisBeats } from "./wordIcons";
 import type { ClipProps } from "./types";
 
@@ -48,6 +49,8 @@ export const ClipVideo: React.FC<ClipProps> = (props) => {
   const frame = useCurrentFrame();
   const { durationInFrames, fps } = useVideoConfig();
   const beats = useMemo(() => emphasisBeats(captions, emphasis), [captions, emphasis]);
+  // nada klip menentukan paket gaya animasi; props.tone menimpa tebakan dari kata-kata dan judul
+  const tone = useMemo(() => props.tone ?? detectTone(captions, title).tone, [props.tone, captions, title]);
 
   if (!src) {
     return null;
@@ -79,8 +82,8 @@ export const ClipVideo: React.FC<ClipProps> = (props) => {
         }}
       />
 
-      <BRollLayer items={broll} accent={accent} />
-      <MotionFX captions={captions} emphasis={emphasis} broll={broll} accent={accent} hook={hook && !!title} />
+      <BRollLayer items={broll} accent={accent} tone={tone} />
+      <MotionFX captions={captions} emphasis={emphasis} broll={broll} accent={accent} hook={hook && !!title} tone={tone} />
       {hook ? <Hook title={title} accent={accent} emphasis={emphasis} /> : null}
       <Captions captions={captions} emphasis={emphasis} style={captionStyle} accent={accent} />
 

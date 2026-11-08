@@ -6,6 +6,7 @@ import { KeywordFX } from "./KeywordFX";
 import { NeonTunnel, RisoPaper, SynthGrid } from "./Backgrounds";
 import { ArrowDoodle } from "./Doodles";
 import { RansomWord } from "./Ransom";
+import { TONE_STYLE, type Tone } from "./tone";
 import { Icon } from "./Icons";
 import type { BRollItem } from "./types";
 
@@ -309,13 +310,10 @@ const Scene: React.FC<{ item: BRollItem; durFrames: number; accent: string; bg: 
   );
 };
 
-/** Urutan gaya keyword dalam satu klip; bergantian supaya tidak monoton. */
-const KEYWORD_STYLES = ["stretch", "ransom", "snap", "slide", "glitch"] as const;
-/** Latar cutaway tanpa footage, bergantian per scene. */
-const SCENE_BGS: SceneBg[] = ["riso", "tunnel", "grid", "gradient"];
-
-export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ items, accent }) => {
+export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string; tone?: Tone }> = ({ items, accent, tone = "edukasi" }) => {
   const { fps } = useVideoConfig();
+  // gaya keyword dan latar scene bergantian di dalam paket gaya sesuai nada klip
+  const style = TONE_STYLE[tone];
   // nomor urut per tipe: keyword ke-n memakai gaya ke-n, kartu ganjil tampil sebagai notifikasi
   const seen: Partial<Record<BRollItem["type"], number>> = {};
   const nth = items.map((it) => {
@@ -328,11 +326,11 @@ export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ i
       {items.map((item, i) => {
         const from = Math.round(item.at * fps);
         const durFrames = Math.max(12, Math.round(item.dur * fps));
-        const kwStyle = KEYWORD_STYLES[nth[i]! % KEYWORD_STYLES.length]!;
+        const kwStyle = style.keyword[nth[i]! % style.keyword.length]!;
         return (
           <Sequence key={`${item.at}-${i}`} from={from} durationInFrames={durFrames} layout="none">
             {item.type === "scene" ? (
-              <Scene item={item} durFrames={durFrames} accent={accent} bg={SCENE_BGS[nth[i]! % SCENE_BGS.length]!} />
+              <Scene item={item} durFrames={durFrames} accent={accent} bg={style.sceneBg[nth[i]! % style.sceneBg.length]!} />
             ) : item.type === "prompt" ? (
               <PromptScreen item={item} durFrames={durFrames} accent={accent} />
             ) : item.type === "card" ? (
@@ -349,7 +347,7 @@ export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ i
               kwStyle === "slide" ? (
                 <Keyword item={item} durFrames={durFrames} accent={accent} />
               ) : kwStyle === "ransom" ? (
-                <RansomWord item={item} durFrames={durFrames} />
+                <RansomWord item={item} durFrames={durFrames} papers={style.ransomPapers} />
               ) : (
                 <KeywordFX item={item} durFrames={durFrames} accent={accent} variant={kwStyle} />
               )
