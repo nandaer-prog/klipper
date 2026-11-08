@@ -6,8 +6,10 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm } from "node:fs/promises";
 import path from "node:path";
 import type { ClipProps } from "../src/types";
+import { emphasisBeats } from "../src/wordIcons";
 import { buildCamera, type FacesJson } from "./camera";
 import { sanitizeCaptions } from "./captions";
+import { fillBrollGaps } from "./broll-fill";
 import { attachFootage } from "./footage";
 import { LAYOUT, OUTPUT, RENDER_CONCURRENCY, ROOT } from "./config";
 import type { ClipPlan } from "./pick-clips";
@@ -15,7 +17,6 @@ import type { JobSettings } from "./settings";
 import { setJob } from "./status";
 
 const FPS = 30;
-const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 
 /** Jaga tempo B-roll: buang item yang menumpuk atau kurang dari 1,5 detik dari item sebelumnya. */
 const spaceBroll = (items: ClipProps["broll"]): ClipProps["broll"] => {
@@ -114,8 +115,6 @@ export const renderClips = async (
     const rel = `work/${id}/clip_${n}.mp4`;
     const abs = path.join(ROOT, "public", rel);
 
-    // kata penting -> waktu dentuman zoom
-    const emph = new Set(clip.emphasis.map(norm).filter(Boolean));
     const startMs = clip.start * 1000;
     const endMs = clip.end * 1000;
     const clipCaptions: Caption[] = captions
@@ -126,7 +125,8 @@ export const renderClips = async (
         endMs: c.endMs - startMs,
         timestampMs: c.timestampMs === null ? null : c.timestampMs - startMs,
       }));
-    const beats = clipCaptions.filter((c) => emph.has(norm(c.text))).map((c) => c.startMs / 1000);
+    // kata penting -> waktu dentuman zoom; caption Whisper berupa potongan kata, jadi dicocokkan per kata utuh
+    const beats = emphasisBeats(clipCaptions, clip.emphasis);
 
     const common = {
       captions: clipCaptions,
@@ -135,7 +135,8 @@ export const renderClips = async (
       captionStyle: process.env.CAPTION_STYLE === "karaoke" ? ("karaoke" as const) : settings.captionStyle,
       title: clip.title,
       hook: settings.hook,
-      broll: await attachFootage(spaceBroll(clip.broll), {
+      // B-roll dari pemilih momen + isian otomatis di jeda panjang (BROLL_FILL=0 untuk mematikan)
+      broll: await attachFootage(fillBrollGaps(spaceBroll(clip.broll), clipCaptions, clip.emphasis, dur, { skipBefore: settings.hook ? 3.4 : 0.5 }), {
         publicDir: path.join(ROOT, "public"),
         relDir: `work/${id}`,
         prefix: `broll_${n}`,

@@ -1,8 +1,10 @@
-import React from "react";
+import React, { useMemo } from "react";
 import { AbsoluteFill, OffthreadVideo, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { BRollLayer } from "./BRoll";
 import { Captions } from "./Captions";
 import { Hook } from "./Hook";
+import { MotionFX } from "./MotionFX";
+import { emphasisBeats } from "./wordIcons";
 import type { ClipProps } from "./types";
 
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -44,11 +46,19 @@ const CameraVideo: React.FC<Pick<ClipProps, "src" | "srcWidth" | "srcHeight" | "
 export const ClipVideo: React.FC<ClipProps> = (props) => {
   const { src, mode, camera, captions, emphasis, captionStyle, title, hook, broll, accent } = props;
   const frame = useCurrentFrame();
-  const { durationInFrames } = useVideoConfig();
+  const { durationInFrames, fps } = useVideoConfig();
+  const beats = useMemo(() => emphasisBeats(captions, emphasis), [captions, emphasis]);
 
   if (!src) {
     return null;
   }
+
+  // mode komposit tidak punya kamera pintar: beri dentuman zoom singkat di kata penting
+  const t = frame / fps;
+  const punch = beats.reduce((m, b) => {
+    const since = t - b;
+    return since >= 0 && since < 0.4 ? Math.max(m, 0.07 * (1 - since / 0.4)) : m;
+  }, 0);
 
   return (
     <AbsoluteFill style={{ backgroundColor: "black" }}>
@@ -57,7 +67,7 @@ export const ClipVideo: React.FC<ClipProps> = (props) => {
       ) : (
         <OffthreadVideo
           src={staticFile(src)}
-          style={{ width: "100%", height: "100%", objectFit: "cover" }}
+          style={{ width: "100%", height: "100%", objectFit: "cover", transform: `scale(${1 + punch})` }}
         />
       )}
 
@@ -70,6 +80,7 @@ export const ClipVideo: React.FC<ClipProps> = (props) => {
       />
 
       <BRollLayer items={broll} accent={accent} />
+      <MotionFX captions={captions} emphasis={emphasis} broll={broll} accent={accent} hook={hook && !!title} />
       {hook ? <Hook title={title} accent={accent} emphasis={emphasis} /> : null}
       <Captions captions={captions} emphasis={emphasis} style={captionStyle} accent={accent} />
 
