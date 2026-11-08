@@ -66,3 +66,17 @@ export const iconForWord = (word: string): IconName | null => {
   if (w.length < 3) return null;
   return ICON_RULES.find(([re]) => re.test(w))?.[1] ?? null;
 };
+
+const SURVEIL =
+  /^(sadap|penyadap|disadap|menyadap|intip|diintip|mengintip|awasi|mengawasi|diawasi|pengawas|pantau|dipantau|memantau|pemantau|rekam|direkam|merekam|perekam|cctv|lacak|dilacak|melacak|matamata|spion|intelijen)/;
+
+/**
+ * Golongan kata untuk motion graphic khusus: "surveil" (sadap, intip, rekam...) memicu
+ * viewfinder REC / mata glitch / karakter mengintip, "money" memicu maskot uang.
+ */
+export const wordClass = (word: string): "surveil" | "money" | null => {
+  const w = normWord(word);
+  if (w === "mata" || w === "intel" || SURVEIL.test(w)) return "surveil";
+  if (iconForWord(w) === "money") return "money";
+  return null;
+};

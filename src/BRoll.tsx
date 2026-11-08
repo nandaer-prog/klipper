@@ -1,8 +1,11 @@
 import React from "react";
-import { AbsoluteFill, OffthreadVideo, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
+import { AbsoluteFill, OffthreadVideo, Sequence, interpolate, random, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { anton, montserrat } from "./fonts";
 import { NewsCard, NotifBanner, OrbitScreen, PromptScreen } from "./BRollScreens";
 import { KeywordFX } from "./KeywordFX";
+import { NeonTunnel, RisoPaper, SynthGrid } from "./Backgrounds";
+import { ArrowDoodle } from "./Doodles";
+import { RansomWord } from "./Ransom";
 import { Icon } from "./Icons";
 import type { BRollItem } from "./types";
 
@@ -141,21 +144,37 @@ const Stat: React.FC<{ item: BRollItem; durFrames: number; accent: string }> = (
             ) : null}
           </AbsoluteFill>
         </div>
+        <StatArrows seed={item.text} halfWidth={262} y={905} />
       </AbsoluteFill>
     );
   }
 
+  const fontSize = item.text.length > 8 ? 150 : 210;
   return (
     <AbsoluteFill style={{ alignItems: "center", paddingTop: 800, opacity: out }}>
       <div style={{ transform: `scale(${scale})`, textAlign: "center" }}>
-        <div style={statNumberStyle(item.text.length > 8 ? 150 : 210, accent)}>{shown}</div>
+        <div style={statNumberStyle(fontSize, accent)}>{shown}</div>
         {item.sub ? (
           <div style={{ fontFamily: montserrat, fontWeight: 900, fontSize: 44, color: "#fff", textTransform: "uppercase", marginTop: 8, textShadow: "0 4px 14px rgba(0,0,0,.8)" }}>
             {item.sub}
           </div>
         ) : null}
       </div>
+      <StatArrows seed={item.text} halfWidth={(item.text.length * fontSize * 0.46) / 2} y={900} />
     </AbsoluteFill>
+  );
+};
+
+/** Dua panah kartun dari kiri dan kanan yang menunjuk ke angka (gaya "cartoon dynamic arrows"). */
+const StatArrows: React.FC<{ seed: string; halfWidth: number; y: number }> = ({ seed, halfWidth, y }) => {
+  const gapX = Math.min(420, halfWidth + 26);
+  const kinds = ["curve", "loop", "striped"] as const;
+  const k = Math.floor(random(`${seed}-arrow`) * kinds.length);
+  return (
+    <>
+      <ArrowDoodle kind={kinds[k]!} seed={`${seed}-a1`} x={Math.max(110, 540 - gapX)} y={y + 10} pointAt={8} delay={6} scale={0.85} />
+      <ArrowDoodle kind={kinds[(k + 1) % kinds.length]!} seed={`${seed}-a2`} x={Math.min(970, 540 + gapX)} y={y + 10} pointAt={172} mirror delay={10} scale={0.85} />
+    </>
   );
 };
 
@@ -192,8 +211,11 @@ const Keyword: React.FC<{ item: BRollItem; durFrames: number; accent: string }> 
   );
 };
 
+/** Latar cutaway tanpa footage: gradasi lama, terowongan neon, grid synthwave, atau kertas risograph. */
+export type SceneBg = "gradient" | "tunnel" | "grid" | "riso";
+
 /** Cutaway layar penuh: latar animasi + ikon besar + headline (suara pembicara tetap berjalan). */
-const Scene: React.FC<{ item: BRollItem; durFrames: number; accent: string }> = ({ item, durFrames, accent }) => {
+const Scene: React.FC<{ item: BRollItem; durFrames: number; accent: string; bg: SceneBg }> = ({ item, durFrames, accent, bg }) => {
   const { frame, enter, out } = useAnim(durFrames);
   const inOpacity = interpolate(frame, [0, 6], [0, 1], { extrapolateRight: "clamp" });
   const blobs = [0, 1, 2, 3, 4, 5];
@@ -231,21 +253,31 @@ const Scene: React.FC<{ item: BRollItem; durFrames: number; accent: string }> = 
   }
   return (
     <AbsoluteFill style={{ opacity: Math.min(out, inOpacity), transform: `scale(${interpolate(enter, [0, 1], [1.12, 1])})` }}>
-      <AbsoluteFill style={{ background: `linear-gradient(${150 + frame * 0.8}deg, #1d0f4f 0%, #6a2cff 45%, ${accent} 130%)` }} />
-      {blobs.map((i) => (
-        <div
-          key={i}
-          style={{
-            position: "absolute",
-            left: 120 + ((i * 197) % 800) + Math.sin(frame / 22 + i) * 70,
-            top: 160 + ((i * 331) % 1500) + Math.cos(frame / 26 + i * 2) * 80,
-            width: 150 + (i % 3) * 110,
-            height: 150 + (i % 3) * 110,
-            borderRadius: "50%",
-            background: i % 2 ? "rgba(255,255,255,.10)" : "rgba(255,255,255,.18)",
-          }}
-        />
-      ))}
+      {bg === "tunnel" ? (
+        <NeonTunnel frame={frame} />
+      ) : bg === "grid" ? (
+        <SynthGrid frame={frame} />
+      ) : bg === "riso" ? (
+        <RisoPaper seed={`scene-${item.text}`} />
+      ) : (
+        <>
+          <AbsoluteFill style={{ background: `linear-gradient(${150 + frame * 0.8}deg, #1d0f4f 0%, #6a2cff 45%, ${accent} 130%)` }} />
+          {blobs.map((i) => (
+            <div
+              key={i}
+              style={{
+                position: "absolute",
+                left: 120 + ((i * 197) % 800) + Math.sin(frame / 22 + i) * 70,
+                top: 160 + ((i * 331) % 1500) + Math.cos(frame / 26 + i * 2) * 80,
+                width: 150 + (i % 3) * 110,
+                height: 150 + (i % 3) * 110,
+                borderRadius: "50%",
+                background: i % 2 ? "rgba(255,255,255,.10)" : "rgba(255,255,255,.18)",
+              }}
+            />
+          ))}
+        </>
+      )}
       <AbsoluteFill style={{ alignItems: "center", justifyContent: "flex-start", paddingTop: 300 }}>
         <div style={{ transform: `rotate(${Math.sin(frame / 9) * 6}deg) scale(${1 + Math.sin(frame / 8) * 0.04})` }}>
           <Icon name={item.icon ?? "bolt"} size={380} color={accent} />
@@ -278,7 +310,9 @@ const Scene: React.FC<{ item: BRollItem; durFrames: number; accent: string }> = 
 };
 
 /** Urutan gaya keyword dalam satu klip; bergantian supaya tidak monoton. */
-const KEYWORD_STYLES = ["stretch", "snap", "slide", "glitch"] as const;
+const KEYWORD_STYLES = ["stretch", "ransom", "snap", "slide", "glitch"] as const;
+/** Latar cutaway tanpa footage, bergantian per scene. */
+const SCENE_BGS: SceneBg[] = ["riso", "tunnel", "grid", "gradient"];
 
 export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ items, accent }) => {
   const { fps } = useVideoConfig();
@@ -298,7 +332,7 @@ export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ i
         return (
           <Sequence key={`${item.at}-${i}`} from={from} durationInFrames={durFrames} layout="none">
             {item.type === "scene" ? (
-              <Scene item={item} durFrames={durFrames} accent={accent} />
+              <Scene item={item} durFrames={durFrames} accent={accent} bg={SCENE_BGS[nth[i]! % SCENE_BGS.length]!} />
             ) : item.type === "prompt" ? (
               <PromptScreen item={item} durFrames={durFrames} accent={accent} />
             ) : item.type === "card" ? (
@@ -314,6 +348,8 @@ export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ i
             ) : item.type === "keyword" ? (
               kwStyle === "slide" ? (
                 <Keyword item={item} durFrames={durFrames} accent={accent} />
+              ) : kwStyle === "ransom" ? (
+                <RansomWord item={item} durFrames={durFrames} />
               ) : (
                 <KeywordFX item={item} durFrames={durFrames} accent={accent} variant={kwStyle} />
               )
