@@ -1,7 +1,8 @@
 import React from "react";
 import { AbsoluteFill, OffthreadVideo, Sequence, interpolate, spring, staticFile, useCurrentFrame, useVideoConfig } from "remotion";
 import { anton, montserrat } from "./fonts";
-import { NewsCard, OrbitScreen, PromptScreen } from "./BRollScreens";
+import { NewsCard, NotifBanner, OrbitScreen, PromptScreen } from "./BRollScreens";
+import { KeywordFX } from "./KeywordFX";
 import { Icon } from "./Icons";
 import type { BRollItem } from "./types";
 
@@ -54,25 +55,100 @@ const IconCard: React.FC<{ item: BRollItem; durFrames: number; accent: string; i
   );
 };
 
+/**
+ * Pecah teks stat menjadi awalan, angka, dan akhiran, misal "Rp50,5 T" atau "1.000.000".
+ * Format Indonesia: titik = pemisah ribuan, koma = desimal. Null kalau tidak ada angka.
+ */
+export const parseStat = (text: string) => {
+  const m = text.match(/^(\D*?)(\d[\d.,]*\d|\d)(.*)$/);
+  if (!m) return null;
+  const [, prefix, raw, suffix] = m as unknown as [string, string, string, string];
+  let decSep = ",";
+  let groupSep = ".";
+  if (!raw.includes(",") && raw.includes(".") && !/^\d{1,3}(\.\d{3})+$/.test(raw)) {
+    // satu titik bukan pola ribuan, misal "2.5" = desimal gaya Inggris
+    decSep = ".";
+    groupSep = ",";
+  }
+  const [intPart, decPart = ""] = raw.split(decSep);
+  const value = Number(`${intPart!.split(groupSep).join("")}.${decPart || "0"}`);
+  if (!Number.isFinite(value)) return null;
+  return { prefix, suffix, value, decimals: decPart.length, grouped: intPart!.includes(groupSep), decSep, groupSep };
+};
+
+const formatStat = (v: number, p: NonNullable<ReturnType<typeof parseStat>>) => {
+  const [i, d] = v.toFixed(p.decimals).split(".");
+  const int = p.grouped ? i!.replace(/\B(?=(\d{3})+(?!\d))/g, p.groupSep) : i!;
+  return p.prefix + int + (d ? p.decSep + d : "") + p.suffix;
+};
+
+const statNumberStyle = (fontSize: number, accent: string): React.CSSProperties => ({
+  fontFamily: anton,
+  fontSize,
+  lineHeight: 1,
+  background: `linear-gradient(180deg, #fff 10%, ${accent} 90%)`,
+  WebkitBackgroundClip: "text",
+  color: "transparent",
+  WebkitTextStroke: "3px #111",
+  filter: "drop-shadow(0 10px 0 #111) drop-shadow(0 18px 24px rgba(0,0,0,.5))",
+  fontVariantNumeric: "tabular-nums",
+});
+
+const RING_R = 255;
+const RING_C = 2 * Math.PI * RING_R;
+
 const Stat: React.FC<{ item: BRollItem; durFrames: number; accent: string }> = ({ item, durFrames, accent }) => {
-  const { enter, out } = useAnim(durFrames);
+  const { frame, enter, out } = useAnim(durFrames);
+  const { fps } = useVideoConfig();
+  const parsed = parseStat(item.text);
+  // angka naik dari 0 ke nilai akhir dalam ~0,8 detik (ease-out), lalu sedikit "denyut" saat sampai
+  const countEnd = Math.min(Math.round(fps * 0.8), Math.max(4, durFrames - 12));
+  const t = interpolate(frame, [2, countEnd], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const eased = 1 - Math.pow(1 - t, 3);
+  const shown = parsed ? formatStat(parsed.value * eased, parsed) : item.text;
+  const landPop = parsed ? interpolate(frame, [countEnd, countEnd + 4, countEnd + 9], [1, 1.08, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) : 1;
+  const scale = interpolate(enter, [0, 1], [0.4, 1]) * landPop;
+
+  // persen: cincin progres ikut terisi bersama angka (gaya "Counter: Progress Ring")
+  const pct = parsed && parsed.suffix.trim().startsWith("%") ? Math.min(1, Math.max(0, parsed.value / 100)) : null;
+  if (pct !== null) {
+    const filled = pct * eased;
+    return (
+      <AbsoluteFill style={{ alignItems: "center", paddingTop: 640, opacity: out }}>
+        <div style={{ position: "relative", width: 520, height: 520, transform: `scale(${scale})` }}>
+          <div style={{ position: "absolute", inset: 34, borderRadius: "50%", background: "radial-gradient(circle, rgba(0,0,0,.6) 0%, rgba(0,0,0,.35) 65%, rgba(0,0,0,0) 100%)" }} />
+          <svg width={520} height={520} viewBox="0 0 600 600" style={{ position: "absolute", left: 0, top: 0, transform: "rotate(-90deg)", filter: "drop-shadow(0 8px 16px rgba(0,0,0,.45))" }}>
+            <circle cx={300} cy={300} r={RING_R} fill="none" stroke="rgba(255,255,255,.22)" strokeWidth={34} />
+            <circle
+              cx={300}
+              cy={300}
+              r={RING_R}
+              fill="none"
+              stroke={accent}
+              strokeWidth={34}
+              strokeLinecap="round"
+              strokeDasharray={RING_C}
+              strokeDashoffset={RING_C * (1 - filled)}
+              opacity={filled > 0.005 ? 1 : 0}
+            />
+          </svg>
+          <AbsoluteFill style={{ alignItems: "center", justifyContent: "center", flexDirection: "column" }}>
+            <div style={statNumberStyle(item.text.length > 5 ? 130 : 165, accent)}>{shown}</div>
+            {item.sub ? (
+              <div style={{ fontFamily: montserrat, fontWeight: 900, fontSize: 32, color: "#fff", textTransform: "uppercase", marginTop: 6, maxWidth: 360, textAlign: "center", lineHeight: 1.1, textShadow: "0 4px 14px rgba(0,0,0,.8)" }}>
+                {item.sub}
+              </div>
+            ) : null}
+          </AbsoluteFill>
+        </div>
+      </AbsoluteFill>
+    );
+  }
+
   return (
     <AbsoluteFill style={{ alignItems: "center", paddingTop: 800, opacity: out }}>
-      <div style={{ transform: `scale(${interpolate(enter, [0, 1], [0.4, 1])})`, textAlign: "center" }}>
-        <div
-          style={{
-            fontFamily: anton,
-            fontSize: item.text.length > 8 ? 150 : 210,
-            lineHeight: 1,
-            background: `linear-gradient(180deg, #fff 10%, ${accent} 90%)`,
-            WebkitBackgroundClip: "text",
-            color: "transparent",
-            WebkitTextStroke: "3px #111",
-            filter: "drop-shadow(0 10px 0 #111) drop-shadow(0 18px 24px rgba(0,0,0,.5))",
-          }}
-        >
-          {item.text}
-        </div>
+      <div style={{ transform: `scale(${scale})`, textAlign: "center" }}>
+        <div style={statNumberStyle(item.text.length > 8 ? 150 : 210, accent)}>{shown}</div>
         {item.sub ? (
           <div style={{ fontFamily: montserrat, fontWeight: 900, fontSize: 44, color: "#fff", textTransform: "uppercase", marginTop: 8, textShadow: "0 4px 14px rgba(0,0,0,.8)" }}>
             {item.sub}
@@ -201,13 +277,24 @@ const Scene: React.FC<{ item: BRollItem; durFrames: number; accent: string }> = 
   );
 };
 
+/** Urutan gaya keyword dalam satu klip; bergantian supaya tidak monoton. */
+const KEYWORD_STYLES = ["stretch", "snap", "slide", "glitch"] as const;
+
 export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ items, accent }) => {
   const { fps } = useVideoConfig();
+  // nomor urut per tipe: keyword ke-n memakai gaya ke-n, kartu ganjil tampil sebagai notifikasi
+  const seen: Partial<Record<BRollItem["type"], number>> = {};
+  const nth = items.map((it) => {
+    const n = seen[it.type] ?? 0;
+    seen[it.type] = n + 1;
+    return n;
+  });
   return (
     <>
       {items.map((item, i) => {
         const from = Math.round(item.at * fps);
         const durFrames = Math.max(12, Math.round(item.dur * fps));
+        const kwStyle = KEYWORD_STYLES[nth[i]! % KEYWORD_STYLES.length]!;
         return (
           <Sequence key={`${item.at}-${i}`} from={from} durationInFrames={durFrames} layout="none">
             {item.type === "scene" ? (
@@ -215,13 +302,21 @@ export const BRollLayer: React.FC<{ items: BRollItem[]; accent: string }> = ({ i
             ) : item.type === "prompt" ? (
               <PromptScreen item={item} durFrames={durFrames} accent={accent} />
             ) : item.type === "card" ? (
-              <NewsCard item={item} durFrames={durFrames} accent={accent} />
+              nth[i]! % 2 === 1 ? (
+                <NotifBanner item={item} durFrames={durFrames} accent={accent} />
+              ) : (
+                <NewsCard item={item} durFrames={durFrames} accent={accent} />
+              )
             ) : item.type === "orbit" ? (
               <OrbitScreen item={item} durFrames={durFrames} accent={accent} />
             ) : item.type === "stat" ? (
               <Stat item={item} durFrames={durFrames} accent={accent} />
             ) : item.type === "keyword" ? (
-              <Keyword item={item} durFrames={durFrames} accent={accent} />
+              kwStyle === "slide" ? (
+                <Keyword item={item} durFrames={durFrames} accent={accent} />
+              ) : (
+                <KeywordFX item={item} durFrames={durFrames} accent={accent} variant={kwStyle} />
+              )
             ) : (
               <IconCard item={item} durFrames={durFrames} accent={accent} index={i} />
             )}
