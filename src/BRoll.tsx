@@ -54,11 +54,46 @@ const IconCard: React.FC<{ item: BRollItem; durFrames: number; accent: string; i
   );
 };
 
+/**
+ * Pecah teks stat menjadi awalan, angka, dan akhiran, misal "Rp50,5 T" atau "1.000.000".
+ * Format Indonesia: titik = pemisah ribuan, koma = desimal. Null kalau tidak ada angka.
+ */
+export const parseStat = (text: string) => {
+  const m = text.match(/^(\D*?)(\d[\d.,]*\d|\d)(.*)$/);
+  if (!m) return null;
+  const [, prefix, raw, suffix] = m as unknown as [string, string, string, string];
+  let decSep = ",";
+  let groupSep = ".";
+  if (!raw.includes(",") && raw.includes(".") && !/^\d{1,3}(\.\d{3})+$/.test(raw)) {
+    // satu titik bukan pola ribuan, misal "2.5" = desimal gaya Inggris
+    decSep = ".";
+    groupSep = ",";
+  }
+  const [intPart, decPart = ""] = raw.split(decSep);
+  const value = Number(`${intPart!.split(groupSep).join("")}.${decPart || "0"}`);
+  if (!Number.isFinite(value)) return null;
+  return { prefix, suffix, value, decimals: decPart.length, grouped: intPart!.includes(groupSep), decSep, groupSep };
+};
+
+const formatStat = (v: number, p: NonNullable<ReturnType<typeof parseStat>>) => {
+  const [i, d] = v.toFixed(p.decimals).split(".");
+  const int = p.grouped ? i!.replace(/\B(?=(\d{3})+(?!\d))/g, p.groupSep) : i!;
+  return p.prefix + int + (d ? p.decSep + d : "") + p.suffix;
+};
+
 const Stat: React.FC<{ item: BRollItem; durFrames: number; accent: string }> = ({ item, durFrames, accent }) => {
-  const { enter, out } = useAnim(durFrames);
+  const { frame, enter, out } = useAnim(durFrames);
+  const { fps } = useVideoConfig();
+  const parsed = parseStat(item.text);
+  // angka naik dari 0 ke nilai akhir dalam ~0,8 detik (ease-out), lalu sedikit "denyut" saat sampai
+  const countEnd = Math.min(Math.round(fps * 0.8), Math.max(4, durFrames - 12));
+  const t = interpolate(frame, [2, countEnd], [0, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" });
+  const eased = 1 - Math.pow(1 - t, 3);
+  const shown = parsed ? formatStat(parsed.value * eased, parsed) : item.text;
+  const landPop = parsed ? interpolate(frame, [countEnd, countEnd + 4, countEnd + 9], [1, 1.08, 1], { extrapolateLeft: "clamp", extrapolateRight: "clamp" }) : 1;
   return (
     <AbsoluteFill style={{ alignItems: "center", paddingTop: 800, opacity: out }}>
-      <div style={{ transform: `scale(${interpolate(enter, [0, 1], [0.4, 1])})`, textAlign: "center" }}>
+      <div style={{ transform: `scale(${interpolate(enter, [0, 1], [0.4, 1]) * landPop})`, textAlign: "center" }}>
         <div
           style={{
             fontFamily: anton,
@@ -69,9 +104,10 @@ const Stat: React.FC<{ item: BRollItem; durFrames: number; accent: string }> = (
             color: "transparent",
             WebkitTextStroke: "3px #111",
             filter: "drop-shadow(0 10px 0 #111) drop-shadow(0 18px 24px rgba(0,0,0,.5))",
+            fontVariantNumeric: "tabular-nums",
           }}
         >
-          {item.text}
+          {shown}
         </div>
         {item.sub ? (
           <div style={{ fontFamily: montserrat, fontWeight: 900, fontSize: 44, color: "#fff", textTransform: "uppercase", marginTop: 8, textShadow: "0 4px 14px rgba(0,0,0,.8)" }}>
