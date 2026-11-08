@@ -1,6 +1,9 @@
 import { existsSync } from "node:fs";
 import { readFile, rm } from "node:fs/promises";
 import { MAX_CLIP_SEC, MAX_CLIPS, MIN_CLIP_SEC } from "./config";
+import type { CaptionStyle } from "../src/types";
+
+const CAPTION_STYLES: readonly CaptionStyle[] = ["pop", "box", "clean", "karaoke"];
 
 /** Pengaturan yang dipilih pengguna untuk satu video (dari form di ruang Aoi). */
 export type JobSettings = {
@@ -8,7 +11,7 @@ export type JobSettings = {
   minSec: number;
   maxSec: number;
   brief: string;
-  captionStyle: "pop" | "box" | "clean";
+  captionStyle: CaptionStyle;
   faceTracking: boolean;
   broll: boolean;
   hook: boolean;
@@ -42,7 +45,7 @@ export const parseSettings = (raw: unknown): JobSettings => {
     minSec,
     maxSec,
     brief: String(r.brief ?? "").replace(/\s+/g, " ").trim().slice(0, 1200),
-    captionStyle: style === "box" || style === "clean" ? style : "pop",
+    captionStyle: CAPTION_STYLES.includes(style as CaptionStyle) ? (style as CaptionStyle) : "pop",
     faceTracking: r.faceTracking === undefined ? d.faceTracking : Boolean(r.faceTracking),
     broll: r.broll === undefined ? d.broll : Boolean(r.broll),
     hook: r.hook === undefined ? d.hook : Boolean(r.hook),

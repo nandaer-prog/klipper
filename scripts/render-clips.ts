@@ -131,8 +131,7 @@ export const renderClips = async (
     const common = {
       captions: clipCaptions,
       emphasis: clip.emphasis,
-      // CAPTION_STYLE=karaoke (env) menimpa pengaturan dashboard
-      captionStyle: process.env.CAPTION_STYLE === "karaoke" ? ("karaoke" as const) : settings.captionStyle,
+      captionStyle: settings.captionStyle,
       title: clip.title,
       hook: settings.hook,
       // B-roll dari pemilih momen + isian otomatis di jeda panjang (BROLL_FILL=0 untuk mematikan)
