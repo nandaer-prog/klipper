@@ -103,6 +103,10 @@
   .clips { display:grid; grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); gap:12px; margin-top:12px; }
   .clip video { width:100%; aspect-ratio:9/16; background:#000; border-radius:12px; }
   .clip .row { margin-top:6px; }
+  .moment { border:1px solid var(--line); border-radius:12px; padding:10px; background:#fff; }
+  .acts { display:flex; flex-wrap:wrap; align-items:center; gap:8px; margin-top:8px; }
+  .scr-box summary { cursor:pointer; margin-top:8px; font-size:13px; color:var(--muted); }
+  .scr { white-space:pre-wrap; font:13px/1.55 var(--font); background:#f6f8fb; border-radius:8px; padding:10px; margin:8px 0 0; max-height:220px; overflow:auto; }
   a.btn, button.btn { background:var(--blue); color:#fff; border:0; border-radius:10px; padding:7px 13px; font:700 13px var(--font); text-decoration:none; cursor:pointer; }
   a.btn:hover, button.btn:hover { filter:brightness(1.08); }
   button.ghost { background:#fff; color:var(--bad); border:1px solid var(--line); }
@@ -183,12 +187,17 @@
           <label class="chk"><input id="fBroll" type="checkbox" checked> B-roll animasi<small>ikon, angka, cutaway</small></label>
         </div>
         <label class="chk"><input id="fHook" type="checkbox" checked> Judul hook di awal klip</label>
-        <div class="muted" style="margin-top:6px">Pengaturan ini berlaku untuk video atau link yang Anda kirim setelahnya.</div>
+        <div class="muted" style="margin-top:6px">Pengaturan ini dipakai saat Anda menekan Upload atau Unduh otomatis.</div>
       </div>
       <div id="drop">
         <strong>Seret video mentah ke sini</strong>
         <span>atau klik untuk memilih file (.mp4 .mov .mkv .webm .avi .m4v)</span>
         <input id="file" type="file" accept="video/*,.mkv" multiple hidden>
+      </div>
+      <div id="staged" class="list" style="margin-top:12px"></div>
+      <div class="row" style="margin-top:10px">
+        <span class="muted" id="stagedHint">Video belum dikirim. Pilih file, atur brief, lalu tekan Upload.</span>
+        <button class="btn" id="btnUpload" disabled>Upload</button>
       </div>
       <div id="uploads" class="list" style="margin-top:12px"></div>
       <div class="sec">
@@ -275,12 +284,46 @@ Object.values(fields).forEach((el) => el.addEventListener("change", () => {
 }));
 
 // ---------- Upload ----------
+// File yang dipilih hanya masuk daftar "siap dikirim"; baru terkirim setelah tombol Upload ditekan.
 const drop = $("drop"), input = $("file");
+const VIDEO_RE = /\.(mp4|mov|mkv|webm|avi|m4v)$/i;
+let staged = [];
+function addStaged(files) {
+  for (const f of files) {
+    if (!VIDEO_RE.test(f.name)) continue;
+    if (staged.some((x) => x.name === f.name && x.size === f.size)) continue;
+    staged.push(f);
+  }
+  renderStaged();
+}
+function renderStaged() {
+  $("staged").innerHTML = staged.map((f, i) => `
+    <div class="card"><div class="row"><span>${esc(f.name)} <span class="muted">${mb(f.size)}</span></span>
+    <button class="btn ghost" data-unstage="${i}">Batal</button></div></div>`).join("");
+  $("btnUpload").disabled = staged.length === 0;
+  $("btnUpload").textContent = staged.length ? `Upload (${staged.length} video)` : "Upload";
+  $("stagedHint").textContent = staged.length
+    ? "Pengaturan di atas dipakai saat Anda menekan Upload."
+    : "Video belum dikirim. Pilih file, atur brief, lalu tekan Upload.";
+}
 drop.onclick = () => input.click();
-input.onchange = () => { upload([...input.files]); input.value = ""; };
+input.onchange = () => { addStaged([...input.files]); input.value = ""; };
 drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("over"); };
 drop.ondragleave = () => drop.classList.remove("over");
-drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); upload([...e.dataTransfer.files]); };
+drop.ondrop = (e) => { e.preventDefault(); drop.classList.remove("over"); addStaged([...e.dataTransfer.files]); };
+$("staged").onclick = (e) => {
+  const i = e.target.dataset && e.target.dataset.unstage;
+  if (i === undefined) return;
+  staged.splice(Number(i), 1);
+  renderStaged();
+};
+$("btnUpload").onclick = () => {
+  if (!staged.length) return;
+  const files = staged;
+  staged = [];
+  renderStaged();
+  upload(files);
+};
 
 let uploadChain = Promise.resolve();
 function upload(files) {
@@ -376,11 +419,19 @@ async function refresh() {
           </div>
           ${r.brief ? `<div class="muted">Brief: ${esc(r.brief)}</div>` : ""}
           <video class="pv" src="/api/source/${enc(r.id)}" controls preload="metadata" playsinline style="width:100%;max-height:220px;margin:8px 0"></video>
-          <div class="clips">
+          <div class="clips" style="grid-template-columns:1fr">
             ${r.clips.map((c, i) => `
-              <div class="row moment" data-start="${c.start}" data-end="${c.end}" style="cursor:pointer;align-items:flex-start">
-                <span><b>${i + 1}. ${esc(c.title)}</b><br><span class="muted">${tm(c.start)}–${tm(c.end)} · skor ${c.score}/10 · ${esc(c.reason)}</span></span>
-                <button class="btn" data-play>Putar</button>
+              <div class="moment" data-start="${c.start}" data-end="${c.end}" data-id="${esc(r.id)}" data-n="${i + 1}">
+                <div class="row" style="align-items:flex-start">
+                  <span><b>${i + 1}. ${esc(c.title)}</b><br><span class="muted">${tm(c.start)}–${tm(c.end)} · skor ${c.score}/10 · ${esc(c.reason)}</span></span>
+                  <button class="btn ghost" data-play>Putar</button>
+                </div>
+                <div class="acts">
+                  <button class="btn" data-dl>${c.final ? "Unduh klip" : "Unduh potongan mentah"}</button>
+                  <a class="btn ghost" href="/api/plan/${enc(r.id)}/clip/${i + 1}/script?download=1">Unduh skrip</a>
+                  <span class="muted">${c.final ? "klip jadi, sudah diedit" : "belum diedit, render di PC dulu"}</span>
+                </div>
+                <details class="scr-box"><summary>Lihat isi klip</summary><pre class="scr">Memuat...</pre></details>
               </div>`).join("")}
           </div>
         </div>`).join("")
@@ -394,12 +445,43 @@ async function refresh() {
 }
 
 let stopAt = 0;
+// Isi klip (skrip) dimuat saat bagian "Lihat isi klip" dibuka
+$("results").addEventListener("toggle", async (e) => {
+  const box = e.target;
+  if (!box.classList || !box.classList.contains("scr-box") || !box.open) return;
+  const pre = box.querySelector("pre");
+  if (pre.dataset.loaded) return;
+  const m = box.closest(".moment");
+  try {
+    const j = await (await fetch(`/api/plan/${enc(m.dataset.id)}/clip/${m.dataset.n}/script`)).json();
+    pre.textContent = j.text || "(tidak ada ucapan terdeteksi)";
+    pre.dataset.loaded = "1";
+  } catch { pre.textContent = "Gagal memuat skrip."; }
+}, true);
+
 $("results").onclick = async (e) => {
-  const row = e.target.closest && e.target.closest(".moment");
-  if (row) {
-    const v = row.closest(".card").querySelector("video.pv");
-    stopAt = Number(row.dataset.end);
-    v.currentTime = Number(row.dataset.start);
+  const m = e.target.closest && e.target.closest(".moment");
+  const dl = e.target.closest && e.target.closest("[data-dl]");
+  if (m && dl) {
+    // siapkan dulu (potongan mentah dibuat server saat pertama kali), baru mulai mengunduh
+    const base = `/api/plan/${enc(m.dataset.id)}/clip/${m.dataset.n}`;
+    const label = dl.textContent;
+    dl.disabled = true; dl.textContent = "Menyiapkan...";
+    try {
+      const r = await fetch(base + "/prepare");
+      if (!r.ok) throw new Error(r.status);
+      const a = document.createElement("a");
+      a.href = base + "/video?download=1";
+      a.click();
+    } catch { alert("Gagal menyiapkan klip. Coba lagi sebentar."); }
+    dl.disabled = false; dl.textContent = label;
+    return;
+  }
+  const play = e.target.closest && e.target.closest("[data-play]");
+  if (m && play) {
+    const v = m.closest(".card").querySelector("video.pv");
+    stopAt = Number(m.dataset.end);
+    v.currentTime = Number(m.dataset.start);
     v.play();
     v.ontimeupdate = () => { if (v.currentTime >= stopAt) { v.pause(); v.ontimeupdate = null; } };
     return;

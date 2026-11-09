@@ -1,12 +1,12 @@
 import type { Caption } from "@remotion/captions";
-import { createWriteStream, existsSync } from "node:fs";
+import { createReadStream, createWriteStream, existsSync } from "node:fs";
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { Readable } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { Plan } from "./pipeline";
 import { renderClips } from "./render-clips";
-import { ROOT, WORK } from "./config";
+import { OUTPUT, ROOT, WORK } from "./config";
 
 /**
  * Jalan di PC lokal (bukan VPS): ambil rencana momen + video asli dari dashboard,
@@ -15,6 +15,7 @@ import { ROOT, WORK } from "./config";
  *   npm run local                 render semua rencana yang belum dirender
  *   npm run local -- --list       lihat daftar rencana saja
  *   npm run local -- <id>         render satu rencana (ulang pun boleh)
+ *   tambahkan --no-upload         jangan kirim klip jadi ke dashboard
  *
  * Isi .env.local di folder proyek:
  *   CLIPPER_URL=http://IP_VPS:8080
@@ -26,6 +27,7 @@ try {
   // tanpa .env.local, pakai environment variable biasa
 }
 
+const NO_UPLOAD = process.argv.includes("--no-upload");
 const BASE = (process.env.CLIPPER_URL ?? "").replace(/\/+$/, "");
 const PASSWORD = process.env.CLIPPER_PASSWORD ?? "";
 if (!BASE || !PASSWORD) {
@@ -84,13 +86,41 @@ const renderPlan = async (plan: Plan) => {
   await renderClips(plan.id, videoPath, plan.clips, captions, plan.settings);
   await api(`/api/plan/${idPath}/rendered`, { method: "POST" });
   console.log(`Selesai: output/${plan.id}/`);
+
+  // Kirim klip jadi ke dashboard supaya bisa diunduh dari sana (gagal unggah tidak membatalkan render)
+  if (!NO_UPLOAD) {
+    for (const i of plan.clips.keys()) {
+      const n = String(i + 1).padStart(2, "0");
+      const file = path.join(OUTPUT, plan.id, `clip_${n}.mp4`);
+      try {
+        await uploadClip(idPath, i + 1, file);
+      } catch (e) {
+        console.warn(`Unggah klip ${n} gagal (klip tetap ada di ${file}):`, e instanceof Error ? e.message : e);
+      }
+    }
+  }
+};
+
+/** Unggah satu klip hasil render ke dashboard (streaming, tidak dimuat ke memori). */
+const uploadClip = async (idPath: string, n: number, file: string) => {
+  const { size } = await stat(file);
+  process.stdout.write(`Mengunggah klip ${n} (${(size / 1048576).toFixed(1)} MB)...`);
+  const res = await fetch(`${BASE}/api/plan/${idPath}/clip/${n}/final`, {
+    method: "PUT",
+    headers: { authorization: AUTH, "content-type": "video/mp4" },
+    body: Readable.toWeb(createReadStream(file)) as never,
+    duplex: "half",
+  } as RequestInit);
+  if (!res.ok) throw new Error(`PUT klip ${n} -> ${res.status} ${res.statusText}`);
+  process.stdout.write(" selesai\n");
 };
 
 type Row = { id: string; renderedAt: number | null; clips: unknown[] };
 const state = (await (await api("/api/state")).json()) as { results: Row[] };
-const arg = process.argv[2];
+const arg = process.argv.slice(2).find((a) => !a.startsWith("--"));
+const mode = process.argv.slice(2).find((a) => a === "--list");
 
-if (arg === "--list") {
+if (mode === "--list") {
   for (const r of state.results) {
     console.log(`${r.renderedAt ? "[sudah]" : "[baru ]"} ${r.id} (${r.clips.length} momen)`);
   }

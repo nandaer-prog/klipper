@@ -5,6 +5,8 @@ import http from "node:http";
 import path from "node:path";
 import { pipeline } from "node:stream/promises";
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import type { Caption } from "@remotion/captions";
+import { sanitizeCaptions } from "./captions";
 import { INBOX, LIBRARY, ROOT, VIDEO_EXT, WORK } from "./config";
 import type { Plan } from "./pipeline";
 import { defaultSettings, parseSettings, type JobSettings } from "./settings";
@@ -155,6 +157,54 @@ const readPlan = async (id: string): Promise<Plan | null> => {
   }
 };
 
+const num2 = (n: number) => String(n).padStart(2, "0");
+const finalFileOf = (id: string, n: number) => path.join(WORK, id, "final", `clip_${num2(n)}.mp4`);
+const fmtTime = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, "0")}`;
+
+/** Skrip (teks ucapan) satu momen, diambil dari transkrip dengan batas yang sama seperti render. */
+const clipScript = async (id: string, start: number, end: number) => {
+  const caps = sanitizeCaptions(JSON.parse(await readFile(path.join(WORK, id, "captions.json"), "utf8")) as Caption[]);
+  return caps
+    .filter((c) => c.startMs >= start * 1000 && c.endMs <= end * 1000)
+    .map((c) => c.text)
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+};
+
+/** Potongan mentah (belum diedit) dari video asli; dibuat sekali lalu disimpan. */
+const cutJobs = new Map<string, Promise<string>>();
+const ensureRawCut = (id: string, i: number, plan: Plan) => {
+  const out = path.join(WORK, id, "cuts", `klip_${num2(i + 1)}.mp4`);
+  if (existsSync(out)) return Promise.resolve(out);
+  const key = `${id}:${i}`;
+  let job = cutJobs.get(key);
+  if (!job) {
+    job = (async () => {
+      await mkdir(path.dirname(out), { recursive: true });
+      const tmp = `${out}.part.mp4`;
+      const c = plan.clips[i]!;
+      await new Promise<void>((resolve, reject) => {
+        const child = spawn(
+          "ffmpeg",
+          ["-y", "-ss", String(c.start), "-to", String(c.end), "-i", path.join(LIBRARY, path.basename(plan.video)),
+            "-c:v", "libx264", "-preset", "ultrafast", "-crf", "22", "-threads", "2",
+            "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", tmp],
+          { stdio: ["ignore", "ignore", "pipe"] },
+        );
+        let err = "";
+        child.stderr.on("data", (d: Buffer) => (err = (err + d).slice(-800)));
+        child.on("error", reject);
+        child.on("close", (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg gagal (${code}): ${err}`))));
+      });
+      await rename(tmp, out);
+      return out;
+    })().finally(() => cutJobs.delete(key));
+    cutJobs.set(key, job);
+  }
+  return job;
+};
+
 const getState = async () => {
   let jobs: unknown[] = [];
   try {
@@ -191,7 +241,7 @@ const getState = async () => {
       durationSec: plan.durationSec,
       brief: plan.settings.brief,
       renderedAt: plan.renderedAt ?? null,
-      clips: plan.clips,
+      clips: plan.clips.map((c, i) => ({ ...c, final: existsSync(finalFileOf(plan.id, i + 1)) })),
     });
   }
   results.sort((a, b) => b.mtime - a.mtime);
@@ -210,6 +260,7 @@ const serveFile = async (
   file: string,
   download: boolean,
   contentType = "video/mp4",
+  downloadName?: string,
 ) => {
   let s;
   try {
@@ -224,7 +275,7 @@ const serveFile = async (
     "accept-ranges": "bytes",
   };
   if (download) {
-    headers["content-disposition"] = `attachment; filename="${path.basename(file)}"`;
+    headers["content-disposition"] = `attachment; filename="${downloadName ?? path.basename(file)}"`;
   }
   const m = /bytes=(\d*)-(\d*)/.exec(req.headers.range ?? "");
   if (m) {
@@ -381,6 +432,70 @@ const server = http.createServer(async (req, res) => {
       if (req.method === "GET" && parts[1] === "plan" && parts[3] === "captions") {
         await serveFile(req, res, path.join(WORK, id, "captions.json"), false, "application/json");
         return;
+      }
+      // /api/plan/<id>/clip/<n>/(prepare|video|script|final)
+      if (parts[1] === "plan" && parts[3] === "clip") {
+        const idx = Number(parts[4]) - 1;
+        const clip = Number.isInteger(idx) ? plan.clips[idx] : undefined;
+        if (!clip) {
+          res.writeHead(404).end("Klip tidak ditemukan");
+          return;
+        }
+        const n = idx + 1;
+        const action = parts[5];
+        const finalFile = finalFileOf(id, n);
+        // PC lokal mengunggah klip hasil render supaya bisa diunduh dari dashboard
+        if (req.method === "PUT" && action === "final") {
+          await mkdir(path.dirname(finalFile), { recursive: true });
+          const tmp = `${finalFile}.part`;
+          try {
+            await pipeline(req, createWriteStream(tmp));
+          } catch (e) {
+            await rm(tmp, { force: true });
+            throw e;
+          }
+          await rename(tmp, finalFile);
+          json(res, { ok: true });
+          return;
+        }
+        if (req.method === "GET" && action === "script") {
+          const text = await clipScript(id, clip.start, clip.end);
+          if (!url.searchParams.has("download")) {
+            json(res, { text });
+            return;
+          }
+          const body = [
+            `Judul: ${clip.title}`,
+            `Video: ${id}`,
+            `Klip: ${n} dari ${plan.clips.length}`,
+            `Waktu: ${fmtTime(clip.start)}-${fmtTime(clip.end)} (${Math.round(clip.end - clip.start)} detik)`,
+            clip.reason ? `Alasan dipilih: ${clip.reason}` : "",
+            clip.emphasis.length ? `Kata penting: ${clip.emphasis.join(", ")}` : "",
+            "",
+            "Skrip:",
+            text || "(tidak ada ucapan terdeteksi)",
+            "",
+          ]
+            .filter((l, i, a) => l !== "" || a[i - 1] !== "")
+            .join("\n");
+          res
+            .writeHead(200, {
+              "content-type": "text/plain; charset=utf-8",
+              "content-disposition": `attachment; filename="${id}_klip${num2(n)}_skrip.txt"`,
+            })
+            .end(body);
+          return;
+        }
+        if (req.method === "GET" && (action === "prepare" || action === "video")) {
+          const isFinal = existsSync(finalFile);
+          const file = isFinal ? finalFile : await ensureRawCut(id, idx, plan);
+          if (action === "prepare") {
+            json(res, { ok: true, kind: isFinal ? "final" : "raw" });
+            return;
+          }
+          await serveFile(req, res, file, url.searchParams.has("download"), "video/mp4", `${id}_klip${num2(n)}${isFinal ? "" : "_mentah"}.mp4`);
+          return;
+        }
       }
       if (req.method === "GET" && parts[1] === "source") {
         await serveFile(req, res, path.join(LIBRARY, path.basename(plan.video)), url.searchParams.has("download"));

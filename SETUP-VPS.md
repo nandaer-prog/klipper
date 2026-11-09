@@ -21,10 +21,16 @@ Render tidak dikerjakan VPS, jadi VPS tidak perlu Chrome/Remotion untuk render d
    npm run local            # render semua rencana yang belum dirender
    npm run local -- --list  # lihat daftar rencana
    npm run local -- <id>    # render satu rencana (boleh diulang)
+   npm run local -- --no-upload   # render tanpa mengirim klip jadi ke dashboard
    ```
-   Video asli diunduh sekali ke `work/<id>/`, hasil ada di `output/<id>/`, lalu dashboard menandai rencana "Sudah dirender".
+   Video asli diunduh sekali ke `work/<id>/`, hasil ada di `output/<id>/`. Klip jadi ikut diunggah ke dashboard (tanpa `--no-upload`), lalu rencana ditandai "Sudah dirender". Kalau unggahan gagal, klip tetap aman di `output/<id>/`.
 
-Di dashboard, meja Miu menampilkan rencana momen: pratinjau video asli, daftar momen (waktu, skor, alasan sesuai brief) dan tombol Putar untuk mengecek tiap momen sebelum dirender. Menghapus rencana juga menghapus video asli di `library/`.
+Di dashboard, meja Miu menampilkan rencana momen: pratinjau video asli, daftar momen (waktu, skor, alasan sesuai brief) dan tombol Putar untuk mengecek tiap momen. Tiap momen punya:
+- **Unduh klip**: klip jadi hasil edit di PC lokal. Sebelum dirender, tombolnya menjadi **Unduh potongan mentah** (dipotong dari video asli tanpa editing, dibuat server saat pertama diminta).
+- **Unduh skrip**: berkas `.txt` berisi judul, waktu, alasan, kata penting, dan teks ucapan klip itu.
+- **Lihat isi klip**: teks ucapan klip ditampilkan langsung di dashboard.
+
+Video di meja Aoi tidak langsung terkirim saat dipilih: file masuk daftar dulu, baru dikirim setelah tombol **Upload** ditekan. Menghapus rencana juga menghapus video asli, klip jadi, dan potongan mentahnya di VPS.
 
 ## 1. Prasyarat di VPS (Ubuntu/Debian)
 ```bash
