@@ -39,7 +39,8 @@
     "clip": "tsx scripts/pipeline.ts",
     "watch": "tsx scripts/watch.ts",
     "server": "tsx scripts/server.ts",
-    "local": "tsx scripts/local.ts"
+    "local": "tsx scripts/local.ts",
+    "tiktok": "tsx scripts/tiktok.ts"
   },
   "allowScripts": {
     "esbuild": false

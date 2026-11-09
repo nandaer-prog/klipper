@@ -32,6 +32,22 @@ Di dashboard, meja Miu menampilkan rencana momen: pratinjau video asli, daftar m
 
 Video di meja Aoi tidak langsung terkirim saat dipilih: file masuk daftar dulu, baru dikirim setelah tombol **Upload** ditekan. Menghapus rencana juga menghapus video asli, klip jadi, dan potongan mentahnya di VPS.
 
+## Unggah ke TikTok (PC lokal, atas izin di chat)
+Claude bisa mengunggah klip jadi ke TikTok lewat `npm run tiktok`, tetapi hanya di sesi chat yang Anda tunjuk dan hanya setelah Anda menjawab izin unggah secara eksplisit (aturannya ada di `.claude/skills/tiktok-publisher`). Skrip sendiri tidak mengunggah tanpa `--confirm`; tanpa itu hanya menampilkan pratinjau.
+
+Persiapan sekali:
+1. Buat app di TikTok for Developers, tambahkan produk **Login Kit** dan **Content Posting API**, aktifkan scope `user.info.basic`, `video.upload`, `video.publish`, dan daftarkan Redirect URI `http://localhost:8765/callback`.
+2. Isi `.env.local`:
+   ```
+   TIKTOK_CLIENT_KEY=...
+   TIKTOK_CLIENT_SECRET=...
+   ```
+3. Login: `npm run tiktok -- auth` (buka tautan yang tampil, setujui). Token tersimpan di `.tiktok-token.json` (tidak ikut git). Cek akun: `npm run tiktok -- me`.
+
+Pemakaian: `npm run tiktok -- post output/<id>/clip_01.mp4 --caption "Judul #tag"` untuk pratinjau, tambahkan `--confirm` untuk mengunggah. Klip yang sama tidak diunggah dua kali kecuali `--again`.
+
+Batasan TikTok: app yang belum lolos audit hanya boleh mengunggah dengan privasi **privat** (`SELF_ONLY`) dan akun harus ditambahkan sebagai tester; untuk tayang publik, ajukan audit app dulu lalu pakai `--public`.
+
 ## 1. Prasyarat di VPS (Ubuntu/Debian)
 ```bash
 sudo apt update

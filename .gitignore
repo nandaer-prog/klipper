@@ -15,3 +15,5 @@ public/work/
 __pycache__/
 library/
 .env.local
+
+.tiktok-token.json
